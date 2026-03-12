@@ -41,8 +41,14 @@ wheels/
 .env.local
 data/*.tif
 data/*.dem
-data/*.geojson
-viewsheds/
+# Allow processed GeoJSON outputs (public API data, no private fields)
+!data/meshcore_nodes.geojson
+!data/meshcore_nodes_plus.geojson
+# Exclude individual viewshed TIFs (2.2GB, regenerable); allow aggregate rasters
+viewsheds/meshcore/viewshed_*.tif
+viewsheds/meshcore/*.aux.xml
+!viewsheds/meshcore/cumulative_viewshed.tif
+!viewsheds/meshcore/directional_viewshed.tif
 
 # OS
 .DS_Store
