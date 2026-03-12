@@ -32,6 +32,9 @@ wheels/
 .DS_Store
 
 # Project-specific
+.claude/
+Test_Project/
+project/
 *.qgz.autosave
 *.qgz~
 *.qgz
