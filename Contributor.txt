@@ -1,0 +1,16 @@
+To: MrAlders0n@smal.ca
+Subject: Wanting to contribute — terrain-guided war-walking for PNW coverage
+
+Hi,
+
+I'm a GIS student and new MeshCore user in Portland. I posted a terrain viewshed project to the local channel recently and someone pointed me toward MeshMapper, which I hadn't seen before. I've been looking at the PNW coverage data and I'd like to contribute if there's a useful way to do that.
+
+What I noticed looking at the map is that coverage follows roads pretty closely — which makes sense given how wardriving works. I built an open-source pipeline that anyone can run against their own region — it pulls repeater positions from the public MeshCore map API, downloads a free Copernicus 30m DEM, runs terrain line-of-sight viewshed analysis for every node, stacks them into a cumulative coverage raster, generates a directional coverage raster showing which compass sectors each area is served from, and enriches the node layer with derived attributes — coverage area, peer connectivity, and dominant coverage direction. I used Portland as the example dataset. The output identifies areas that are geometrically reachable from the existing nodes but are off-road, so they wouldn't typically get tested by wardriving — trail corridors, forest service roads, hillsides, the kind of terrain where you'd actually want the mesh to work in an emergency.
+
+My thought is that I could use that model to prioritize where to go war-walk and hike with the MeshMapper app, focusing on off-road terrain rather than streets. It seems like it might be a useful way to fill in coverage data in areas that currently appear dark just because nobody's been there with a radio.
+
+I don't know your data model or how contributions work in detail but I'm happy to learn. If there's a better way to contribute, I'm open to hearing that too.
+
+The viewshed project is at https://github.com/AlanMazzotta/MeshCore_QGIS if context is useful. Thanks for building MeshMapper, it's clearly well used in the PNW community.
+
+Alan
