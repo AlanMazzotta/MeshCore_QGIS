@@ -1,5 +1,5 @@
 """
-create_qgis_project.py — Build the MeshCore + Meshtastic dual-layer QGIS project.
+create_qgis_project.py — Build the MeshCore coverage QGIS project.
 
 Run this script from the QGIS Python Console (Plugins > Python Console > Run Script),
 or from a shell that has the QGIS Python environment on PATH:
@@ -12,21 +12,19 @@ auto-refresh as the pipeline writes data.
 
 Intended first-run workflow
 ----------------------------
-1. Run this script → opens project/mesh_coverage.qgz in QGIS
+1. Run this script -> opens project/mesh_coverage.qgz in QGIS
 2. Navigate in QGIS to your area of interest
 3. Run templates/download_dem_from_canvas.py from the QGIS Python Console
-   → downloads DEM for the current map view, adds it as a layer
+   -> downloads DEM for the current map view, adds it as a layer
 4. In VSCode terminal: python scripts/pipeline.py --dem data/dem.tif
-   → node layers and viewshed rasters fill in automatically as QGIS auto-refreshes
+   -> node layers and viewshed rasters fill in automatically as QGIS auto-refreshes
 
 Layers created
 --------------
-    1. OpenStreetMap        — web tile base map for navigation
-    2. Elevation (DEM)      — local GeoTIFF, added if data/dem.tif exists
-    3. MeshCore Coverage    — cumulative viewshed raster (blue ramp), added if present
-    4. Meshtastic Coverage  — cumulative viewshed raster (green ramp), added if present
-    5. MeshCore Nodes       — point layer, blue circles, auto-refreshes every 5s
-    6. Meshtastic Nodes     — point layer, green circles, auto-refreshes every 5s
+    1. OpenStreetMap      — web tile base map for navigation
+    2. Elevation (DEM)    — local GeoTIFF, added if data/dem.tif exists
+    3. MeshCore Coverage  — cumulative viewshed raster (blue ramp), added if present
+    4. MeshCore Nodes     — point layer, blue circles, auto-refreshes every 5s
 """
 
 import argparse
@@ -56,10 +54,8 @@ def _ensure_placeholder(path: Path) -> None:
 
 def build_project(
     meshcore_geojson: str,
-    meshtastic_geojson: str,
     dem_path: str,
     meshcore_viewshed: str = "",
-    meshtastic_viewshed: str = "",
     output_path: str = "mesh_coverage.qgz",
 ) -> None:
     try:
@@ -171,8 +167,7 @@ def build_project(
     # ------------------------------------------------------------------
     # 3 & 4. Viewshed rasters (optional — skip if files not present yet)
     # ------------------------------------------------------------------
-    blue_ramp  = [(0, "#00000000"), (1, "#4575b4"), (5, "#ffffbf"), (10, "#d73027")]
-    green_ramp = [(0, "#00000000"), (1, "#1a9641"), (5, "#ffffbf"), (10, "#d7191c")]
+    blue_ramp = [(0, "#00000000"), (1, "#4575b4"), (5, "#ffffbf"), (10, "#d73027")]
 
     if meshcore_viewshed and Path(meshcore_viewshed).exists():
         mc_vs = QgsRasterLayer(meshcore_viewshed, "MeshCore Coverage")
@@ -181,19 +176,11 @@ def build_project(
             enable_auto_refresh(mc_vs, 10_000)
             project.addMapLayer(mc_vs)
 
-    if meshtastic_viewshed and Path(meshtastic_viewshed).exists():
-        mt_vs = QgsRasterLayer(meshtastic_viewshed, "Meshtastic Coverage")
-        if mt_vs.isValid():
-            style_raster(mt_vs, green_ramp)
-            enable_auto_refresh(mt_vs, 10_000)
-            project.addMapLayer(mt_vs)
-
     # ------------------------------------------------------------------
-    # 5 & 6. Node layers — placeholder GeoJSON created if absent so the
+    # 5. Node layer — placeholder GeoJSON created if absent so the
     # layer exists from the start and auto-refreshes when data arrives.
     # ------------------------------------------------------------------
     _ensure_placeholder(Path(meshcore_geojson))
-    _ensure_placeholder(Path(meshtastic_geojson))
 
     mc_layer = QgsVectorLayer(meshcore_geojson, "MeshCore Nodes", "ogr")
     if mc_layer.isValid():
@@ -204,16 +191,6 @@ def build_project(
         print("  Added MeshCore Nodes layer (empty, auto-refreshes when pipeline runs)")
     else:
         print(f"  WARNING: Could not load MeshCore GeoJSON from {meshcore_geojson}")
-
-    mt_layer = QgsVectorLayer(meshtastic_geojson, "Meshtastic Nodes", "ogr")
-    if mt_layer.isValid():
-        style_points(mt_layer, "#1a9641", size_mm=3.5)
-        add_labels(mt_layer)
-        enable_auto_refresh(mt_layer, 5_000)
-        project.addMapLayer(mt_layer)
-        print("  Added Meshtastic Nodes layer (empty, auto-refreshes when pipeline runs)")
-    else:
-        print(f"  WARNING: Could not load Meshtastic GeoJSON from {meshtastic_geojson}")
 
     # ------------------------------------------------------------------
     # Save project
@@ -235,20 +212,16 @@ def build_project(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Create the MeshCore + Meshtastic QGIS project",
+        description="Create the MeshCore coverage QGIS project",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
     parser.add_argument("--meshcore", default="data/meshcore_nodes.geojson",
                         help="MeshCore nodes GeoJSON (created as empty placeholder if absent)")
-    parser.add_argument("--meshtastic", default="data/meshtastic_nodes.geojson",
-                        help="Meshtastic nodes GeoJSON (created as empty placeholder if absent)")
     parser.add_argument("--dem", default="data/dem.tif",
                         help="DEM GeoTIFF (optional at project creation time)")
     parser.add_argument("--meshcore-viewshed", default="",
                         help="MeshCore cumulative viewshed raster (optional)")
-    parser.add_argument("--meshtastic-viewshed", default="",
-                        help="Meshtastic cumulative viewshed raster (optional)")
     parser.add_argument("--output", default="project/mesh_coverage.qgz",
                         help="Output QGIS project file (default: project/mesh_coverage.qgz)")
 
@@ -256,10 +229,8 @@ def main():
 
     build_project(
         meshcore_geojson=args.meshcore,
-        meshtastic_geojson=args.meshtastic,
         dem_path=args.dem,
         meshcore_viewshed=args.meshcore_viewshed,
-        meshtastic_viewshed=args.meshtastic_viewshed,
         output_path=args.output,
     )
 

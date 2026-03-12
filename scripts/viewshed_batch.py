@@ -296,7 +296,7 @@ class BatchViewshedProcessor:
     """Process multiple viewshed analyses."""
     
     def __init__(self, dem_path: str, nodes_geojson: str, output_dir: str = "./viewsheds",
-                 service_name: str = ""):
+                 service_name: str = "", skip_existing: bool = False):
         """
         Initialize batch processor.
 
@@ -305,9 +305,12 @@ class BatchViewshedProcessor:
             nodes_geojson: Path to nodes GeoJSON layer
             output_dir: Base output directory for viewshed rasters
             service_name: Service label used as a sub-directory (e.g. 'meshcore')
+            skip_existing: If True, skip individual viewshed generation and only
+                           rebuild the cumulative raster from existing TIFs.
         """
         self.analyzer = ViewshedAnalyzer(dem_path, output_dir=output_dir, service_name=service_name)
         self.nodes_geojson = nodes_geojson
+        self.skip_existing = skip_existing
         self.results = {}
     
     def load_nodes(self) -> List[Dict[str, Any]]:
@@ -354,6 +357,10 @@ class BatchViewshedProcessor:
         viewshed_paths = []
         for node in repeaters:
             output_name = f"viewshed_{node['id']}.tif"
+            existing = self.analyzer.output_dir / output_name
+            if self.skip_existing and existing.exists():
+                viewshed_paths.append(str(existing))
+                continue
             path = self.analyzer.single_viewshed(
                 node["lat"], node["lon"],
                 observer_height=2.0,
