@@ -1,4 +1,5 @@
 import os
+import traceback
 from pathlib import Path
 from qgis.core import QgsTask, QgsRasterLayer, QgsProject
 
@@ -33,8 +34,8 @@ class DemTask(QgsTask):
                 output_path=os.path.join(self.work_dir, "data", "meshcore_nodes.geojson"),
             )
             return True
-        except Exception as e:
-            self.error = str(e)
+        except BaseException as e:
+            self.error = traceback.format_exc()
             return False
 
     def finished(self, result):

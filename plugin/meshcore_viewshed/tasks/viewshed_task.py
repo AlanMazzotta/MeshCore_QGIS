@@ -1,4 +1,5 @@
 import os
+import traceback
 from qgis.core import QgsTask, QgsRasterLayer, QgsProject, QgsVectorLayer
 
 
@@ -28,8 +29,8 @@ class ViewshedTask(QgsTask):
             if self.progress_fn:
                 self.progress_fn(100)
             return True
-        except Exception as e:
-            self.error = str(e)
+        except BaseException as e:
+            self.error = traceback.format_exc()
             return False
 
     def finished(self, result):

@@ -13,8 +13,7 @@ def get_dem_bbox(dem_path: str):
     try:
         result = subprocess.run([gdalinfo, dem_path], capture_output=True, text=True, check=True)
     except Exception as e:
-        print(f"ERROR: gdalinfo failed: {e}")
-        sys.exit(1)
+        raise RuntimeError(f"gdalinfo failed: {e}") from e
 
     # Parse "Lower Left  ( -123.0, 45.2)" style lines
     coords = {}
@@ -26,8 +25,7 @@ def get_dem_bbox(dem_path: str):
                     coords[corner] = (float(m.group(1)), float(m.group(2)))
 
     if len(coords) < 2:
-        print(f"ERROR: Could not parse DEM extent from gdalinfo output")
-        sys.exit(1)
+        raise RuntimeError("Could not parse DEM extent from gdalinfo output")
 
     west = min(v[0] for v in coords.values())
     east = max(v[0] for v in coords.values())

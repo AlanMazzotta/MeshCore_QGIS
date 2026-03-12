@@ -1,4 +1,5 @@
 import os
+import traceback
 from qgis.core import QgsTask, QgsVectorLayer, QgsProject
 
 
@@ -20,8 +21,8 @@ class FetchTask(QgsTask):
                 return False
             export_nodes.save_geojson(export_nodes.nodes_to_geojson(nodes), out_path)
             return True
-        except Exception as e:
-            self.error = str(e)
+        except BaseException as e:
+            self.error = traceback.format_exc()
             return False
 
     def finished(self, result):

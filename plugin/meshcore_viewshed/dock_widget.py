@@ -175,7 +175,7 @@ class MeshCoreViewshedDock(QDockWidget):
         self._on_task_started("Fetch Nodes")
         task = FetchTask(work_dir, self.log_msg)
         task.taskCompleted.connect(lambda: self._on_task_done("Fetch Nodes", True))
-        task.taskTerminated.connect(lambda: self._on_task_done("Fetch Nodes", False, "task terminated"))
+        task.taskTerminated.connect(lambda t=task: self._on_task_done("Fetch Nodes", False, t.error or "task terminated"))
         QgsApplication.taskManager().addTask(task)
 
     def _run_dem(self):
@@ -193,7 +193,7 @@ class MeshCoreViewshedDock(QDockWidget):
         self._on_task_started("Download DEM")
         task = DemTask(work_dir, self._bbox, api_key, self.log_msg)
         task.taskCompleted.connect(lambda: self._on_task_done("Download DEM", True))
-        task.taskTerminated.connect(lambda: self._on_task_done("Download DEM", False, "task terminated"))
+        task.taskTerminated.connect(lambda t=task: self._on_task_done("Download DEM", False, t.error or "task terminated"))
         QgsApplication.taskManager().addTask(task)
 
     def _run_viewshed(self):
@@ -204,7 +204,7 @@ class MeshCoreViewshedDock(QDockWidget):
         self._on_task_started("Run Viewshed")
         task = ViewshedTask(work_dir, self.log_msg, self._on_task_progress)
         task.taskCompleted.connect(lambda: self._on_task_done("Run Viewshed", True))
-        task.taskTerminated.connect(lambda: self._on_task_done("Run Viewshed", False, "task terminated"))
+        task.taskTerminated.connect(lambda t=task: self._on_task_done("Run Viewshed", False, t.error or "task terminated"))
         QgsApplication.taskManager().addTask(task)
 
     def _run_directional(self):
@@ -215,7 +215,7 @@ class MeshCoreViewshedDock(QDockWidget):
         self._on_task_started("Directional Raster")
         task = DirectionalTask(work_dir, self.log_msg)
         task.taskCompleted.connect(lambda: self._on_task_done("Directional Raster", True))
-        task.taskTerminated.connect(lambda: self._on_task_done("Directional Raster", False, "task terminated"))
+        task.taskTerminated.connect(lambda t=task: self._on_task_done("Directional Raster", False, t.error or "task terminated"))
         QgsApplication.taskManager().addTask(task)
 
     def _run_enrich(self):
@@ -226,7 +226,7 @@ class MeshCoreViewshedDock(QDockWidget):
         self._on_task_started("Enrich Nodes")
         task = EnrichTask(work_dir, self.log_msg)
         task.taskCompleted.connect(lambda: self._on_task_done("Enrich Nodes", True))
-        task.taskTerminated.connect(lambda: self._on_task_done("Enrich Nodes", False, "task terminated"))
+        task.taskTerminated.connect(lambda t=task: self._on_task_done("Enrich Nodes", False, t.error or "task terminated"))
         QgsApplication.taskManager().addTask(task)
 
     def _run_all(self):

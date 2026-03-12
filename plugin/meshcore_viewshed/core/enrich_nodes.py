@@ -36,10 +36,8 @@ import numpy as np
 
 try:
     from osgeo import gdal
-except ImportError:
-    print("ERROR: osgeo not available. Run with QGIS Python:")
-    print(r'  "C:\Program Files\QGIS 3.40.10\apps\Python312\python.exe" scripts/enrich_nodes.py')
-    sys.exit(1)
+except ImportError as _e:
+    raise ImportError("osgeo not available — run inside QGIS Python") from _e
 
 SECTOR_NAMES = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"]
 
@@ -161,8 +159,7 @@ def run(nodes_path, cumulative_path, viewshed_dir, output_path):
     print(f"Opening cumulative viewshed: {cumulative_path}")
     cum_ds = gdal.Open(cumulative_path)
     if cum_ds is None:
-        print(f"ERROR: Cannot open {cumulative_path}")
-        sys.exit(1)
+        raise RuntimeError(f"Cannot open {cumulative_path}")
     cum_gt = cum_ds.GetGeoTransform()
     rows = cum_ds.RasterYSize
     cols = cum_ds.RasterXSize

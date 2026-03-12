@@ -1,4 +1,5 @@
 import os
+import traceback
 from qgis.core import QgsTask, QgsVectorLayer, QgsProject
 
 
@@ -23,8 +24,8 @@ class EnrichTask(QgsTask):
                 output_path=out_path,
             )
             return True
-        except Exception as e:
-            self.error = str(e)
+        except BaseException as e:
+            self.error = traceback.format_exc()
             return False
 
     def finished(self, result):

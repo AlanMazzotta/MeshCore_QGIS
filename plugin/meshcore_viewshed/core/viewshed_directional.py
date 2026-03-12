@@ -35,10 +35,8 @@ import numpy as np
 
 try:
     from osgeo import gdal, osr
-except ImportError:
-    print("ERROR: osgeo not available. Run with QGIS Python:")
-    print(r'  "C:\Program Files\QGIS 3.40.10\apps\Python312\python.exe" scripts/viewshed_directional.py')
-    sys.exit(1)
+except ImportError as _e:
+    raise ImportError("osgeo not available — run inside QGIS Python") from _e
 
 
 SECTOR_LABELS = {
@@ -93,8 +91,7 @@ def run(viewshed_path: str, nodes_path: str, output_path: str, n_sectors: int):
     print(f"Loading viewshed: {viewshed_path}")
     ds = gdal.Open(viewshed_path)
     if ds is None:
-        print(f"ERROR: Cannot open {viewshed_path}")
-        sys.exit(1)
+        raise RuntimeError(f"Cannot open {viewshed_path}")
 
     band = ds.GetRasterBand(1)
     viewshed = band.ReadAsArray().astype(np.int32)
@@ -133,8 +130,7 @@ def run(viewshed_path: str, nodes_path: str, output_path: str, n_sectors: int):
     print(f"  Repeaters: {len(repeaters)}")
 
     if not repeaters:
-        print("ERROR: No Repeater nodes found in GeoJSON")
-        sys.exit(1)
+        raise RuntimeError("No Repeater nodes found in GeoJSON")
 
     rpt_lats = np.array([r[0] for r in repeaters], dtype=np.float64)
     rpt_lons = np.array([r[1] for r in repeaters], dtype=np.float64)
