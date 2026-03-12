@@ -1,24 +1,20 @@
-import sys
 import os
 from qgis.core import QgsTask, QgsRasterLayer, QgsProject
 
 
 class DirectionalTask(QgsTask):
-    def __init__(self, repo_root, log_fn):
+    def __init__(self, work_dir, log_fn):
         super().__init__("MeshCore: Directional Raster", QgsTask.CanCancel)
-        self.repo_root = repo_root
+        self.work_dir = work_dir
         self.log = log_fn
         self.error = None
 
     def run(self):
-        scripts_dir = os.path.join(self.repo_root, "scripts")
-        if scripts_dir not in sys.path:
-            sys.path.insert(0, scripts_dir)
+        from meshcore_viewshed.core import viewshed_directional
         try:
-            import viewshed_directional
-            cumulative_path = os.path.join(self.repo_root, "viewsheds", "meshcore", "cumulative_viewshed.tif")
-            nodes_path = os.path.join(self.repo_root, "data", "meshcore_nodes.geojson")
-            out_path = os.path.join(self.repo_root, "viewsheds", "meshcore", "directional_viewshed.tif")
+            cumulative_path = os.path.join(self.work_dir, "viewsheds", "meshcore", "cumulative_viewshed.tif")
+            nodes_path = os.path.join(self.work_dir, "data", "meshcore_nodes.geojson")
+            out_path = os.path.join(self.work_dir, "viewsheds", "meshcore", "directional_viewshed.tif")
             viewshed_directional.run(
                 viewshed_path=cumulative_path,
                 nodes_path=nodes_path,
@@ -38,7 +34,7 @@ class DirectionalTask(QgsTask):
             self.log(f"[Directional] Failed: {self.error}")
 
     def _load_layer(self):
-        path = os.path.join(self.repo_root, "viewsheds", "meshcore", "directional_viewshed.tif")
+        path = os.path.join(self.work_dir, "viewsheds", "meshcore", "directional_viewshed.tif")
         if not os.path.exists(path):
             return
         layer_name = "MeshCore Direction"

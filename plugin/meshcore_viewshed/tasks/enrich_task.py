@@ -1,25 +1,21 @@
-import sys
 import os
 from qgis.core import QgsTask, QgsVectorLayer, QgsProject
 
 
 class EnrichTask(QgsTask):
-    def __init__(self, repo_root, log_fn):
+    def __init__(self, work_dir, log_fn):
         super().__init__("MeshCore: Enrich Nodes", QgsTask.CanCancel)
-        self.repo_root = repo_root
+        self.work_dir = work_dir
         self.log = log_fn
         self.error = None
 
     def run(self):
-        scripts_dir = os.path.join(self.repo_root, "scripts")
-        if scripts_dir not in sys.path:
-            sys.path.insert(0, scripts_dir)
+        from meshcore_viewshed.core import enrich_nodes
         try:
-            import enrich_nodes
-            nodes_path = os.path.join(self.repo_root, "data", "meshcore_nodes.geojson")
-            cumulative_path = os.path.join(self.repo_root, "viewsheds", "meshcore", "cumulative_viewshed.tif")
-            viewshed_dir = os.path.join(self.repo_root, "viewsheds", "meshcore")
-            out_path = os.path.join(self.repo_root, "data", "meshcore_nodes_plus.geojson")
+            nodes_path = os.path.join(self.work_dir, "data", "meshcore_nodes.geojson")
+            cumulative_path = os.path.join(self.work_dir, "viewsheds", "meshcore", "cumulative_viewshed.tif")
+            viewshed_dir = os.path.join(self.work_dir, "viewsheds", "meshcore")
+            out_path = os.path.join(self.work_dir, "data", "meshcore_nodes_plus.geojson")
             enrich_nodes.run(
                 nodes_path=nodes_path,
                 cumulative_path=cumulative_path,
@@ -39,7 +35,7 @@ class EnrichTask(QgsTask):
             self.log(f"[Enrich] Failed: {self.error}")
 
     def _load_layer(self):
-        path = os.path.join(self.repo_root, "data", "meshcore_nodes_plus.geojson")
+        path = os.path.join(self.work_dir, "data", "meshcore_nodes_plus.geojson")
         if not os.path.exists(path):
             return
         layer_name = "MeshCore Nodes (enriched)"

@@ -1,28 +1,24 @@
-import sys
 import os
 from qgis.core import QgsTask, QgsRasterLayer, QgsProject, QgsVectorLayer
 
 
 class ViewshedTask(QgsTask):
-    def __init__(self, repo_root, log_fn, progress_fn=None):
+    def __init__(self, work_dir, log_fn, progress_fn=None):
         super().__init__("MeshCore: Run Viewshed", QgsTask.CanCancel)
-        self.repo_root = repo_root
+        self.work_dir = work_dir
         self.log = log_fn
         self.progress_fn = progress_fn
         self.error = None
 
     def run(self):
-        scripts_dir = os.path.join(self.repo_root, "scripts")
-        if scripts_dir not in sys.path:
-            sys.path.insert(0, scripts_dir)
+        from meshcore_viewshed.core.viewshed_batch import BatchViewshedProcessor
         try:
-            import viewshed_batch
-            nodes_path = os.path.join(self.repo_root, "data", "meshcore_nodes.geojson")
-            dem_path = os.path.join(self.repo_root, "data", "dem.tif")
-            out_dir = os.path.join(self.repo_root, "viewsheds", "meshcore")
+            nodes_path = os.path.join(self.work_dir, "data", "meshcore_nodes.geojson")
+            dem_path = os.path.join(self.work_dir, "data", "dem.tif")
+            out_dir = os.path.join(self.work_dir, "viewsheds", "meshcore")
             os.makedirs(out_dir, exist_ok=True)
 
-            processor = viewshed_batch.BatchViewshedProcessor(
+            processor = BatchViewshedProcessor(
                 dem_path=dem_path,
                 nodes_geojson=nodes_path,
                 output_dir=out_dir,
@@ -44,8 +40,8 @@ class ViewshedTask(QgsTask):
             self.log(f"[Viewshed] Failed: {self.error}")
 
     def _load_layers(self):
-        cumulative = os.path.join(self.repo_root, "viewsheds", "meshcore", "cumulative_viewshed.tif")
-        nodes_plus = os.path.join(self.repo_root, "data", "meshcore_nodes.geojson")
+        cumulative = os.path.join(self.work_dir, "viewsheds", "meshcore", "cumulative_viewshed.tif")
+        nodes_plus = os.path.join(self.work_dir, "data", "meshcore_nodes.geojson")
 
         for path, name, is_raster in [
             (cumulative, "MeshCore Coverage", True),

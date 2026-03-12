@@ -23,13 +23,32 @@ def check_dependencies(iface):
     iface.messageBar().pushWidget(widget, Qgis.Warning, duration=0)
 
 
+def _find_python():
+    """Find the real Python executable (not qgis-bin.exe) in the QGIS environment."""
+    import os
+    import sys
+    exe = sys.executable
+    if os.path.basename(exe).lower().startswith("python"):
+        return exe
+    # QGIS on Windows: python lives in <qgis_root>/apps/PythonXXX/python.exe
+    qgis_root = os.path.dirname(os.path.dirname(exe))
+    apps_dir = os.path.join(qgis_root, "apps")
+    if os.path.isdir(apps_dir):
+        for entry in sorted(os.listdir(apps_dir), reverse=True):
+            if entry.lower().startswith("python"):
+                candidate = os.path.join(apps_dir, entry, "python.exe")
+                if os.path.exists(candidate):
+                    return candidate
+    return "python"  # last resort
+
+
 def _install(packages, iface):
     import subprocess
-    import sys
     from qgis.core import Qgis
 
+    python = _find_python()
     try:
-        subprocess.check_call([sys.executable, "-m", "pip", "install"] + packages)
+        subprocess.check_call([python, "-m", "pip", "install"] + packages)
         iface.messageBar().pushMessage(
             "MeshCore Viewshed", "Dependencies installed. Please restart QGIS.",
             level=Qgis.Success, duration=10

@@ -1,22 +1,18 @@
-import sys
 import os
 from qgis.core import QgsTask, QgsVectorLayer, QgsProject
 
 
 class FetchTask(QgsTask):
-    def __init__(self, repo_root, log_fn):
+    def __init__(self, work_dir, log_fn):
         super().__init__("MeshCore: Fetch Nodes", QgsTask.CanCancel)
-        self.repo_root = repo_root
+        self.work_dir = work_dir
         self.log = log_fn
         self.error = None
 
     def run(self):
-        scripts_dir = os.path.join(self.repo_root, "scripts")
-        if scripts_dir not in sys.path:
-            sys.path.insert(0, scripts_dir)
+        from meshcore_viewshed.core import export_nodes
         try:
-            import export_nodes
-            out_path = os.path.join(self.repo_root, "data", "meshcore_nodes_all.geojson")
+            out_path = os.path.join(self.work_dir, "data", "meshcore_nodes_all.geojson")
             os.makedirs(os.path.dirname(out_path), exist_ok=True)
             nodes = export_nodes.fetch_from_map_api()
             if not nodes:
@@ -36,11 +32,10 @@ class FetchTask(QgsTask):
             self.log(f"[Fetch] Failed: {self.error}")
 
     def _load_layer(self):
-        path = os.path.join(self.repo_root, "data", "meshcore_nodes_all.geojson")
+        path = os.path.join(self.work_dir, "data", "meshcore_nodes_all.geojson")
         if not os.path.exists(path):
             return
         layer_name = "MeshCore Nodes (all)"
-        # Remove existing layer with same name before reloading
         for lyr in QgsProject.instance().mapLayersByName(layer_name):
             QgsProject.instance().removeMapLayer(lyr.id())
         layer = QgsVectorLayer(path, layer_name, "ogr")

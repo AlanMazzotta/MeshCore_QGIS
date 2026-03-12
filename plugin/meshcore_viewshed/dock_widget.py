@@ -4,15 +4,13 @@ from qgis.PyQt.QtWidgets import (
     QPushButton, QLineEdit, QLabel, QProgressBar,
     QTextEdit, QGroupBox, QSizePolicy
 )
-from qgis.PyQt.QtCore import Qt, pyqtSlot
-from qgis.core import QgsApplication, QgsTaskManager
-
-PLUGIN_DIR = os.path.dirname(__file__)
-REPO_ROOT = os.path.abspath(os.path.join(PLUGIN_DIR, "..", ".."))
+from qgis.PyQt.QtCore import Qt
+from qgis.core import QgsApplication, QgsProject, QgsSettings
 
 
 class MeshCoreViewshedDock(QDockWidget):
     default_area = Qt.RightDockWidgetArea
+    _SETTINGS_KEY = "meshcore_viewshed/opentopo_api_key"
 
     def __init__(self, iface, parent=None):
         super().__init__("MeshCore Viewshed", parent)
@@ -31,7 +29,7 @@ class MeshCoreViewshedDock(QDockWidget):
         self.api_key_edit = QLineEdit()
         self.api_key_edit.setEchoMode(QLineEdit.Password)
         self.api_key_edit.setPlaceholderText("Required for DEM download")
-        self._load_api_key()
+        self.api_key_edit.setText(QgsSettings().value(self._SETTINGS_KEY, ""))
         api_layout.addWidget(self.api_key_edit)
         layout.addWidget(api_group)
 
@@ -103,24 +101,32 @@ class MeshCoreViewshedDock(QDockWidget):
     # Helpers
     # ------------------------------------------------------------------
 
-    def _load_api_key(self):
-        env_path = os.path.join(REPO_ROOT, ".env")
-        if os.path.exists(env_path):
-            with open(env_path) as f:
-                for line in f:
-                    if line.startswith("OPENTOPO_API_KEY"):
-                        key = line.split("=", 1)[-1].strip().strip('"').strip("'")
-                        self.api_key_edit.setText(key)
-                        break
+    def _work_dir(self):
+        """Return the QGIS project home directory as the working root.
+
+        Outputs (data/, viewsheds/) are written here, so they stay
+        alongside the .qgz file and survive plugin reinstalls.
+        """
+        path = QgsProject.instance().homePath()
+        if not path:
+            self.log_msg(
+                "[Error] No QGIS project is open. "
+                "Save your project first — outputs will be written next to the .qgz file."
+            )
+            return None
+        return path
 
     def _get_api_key(self):
-        return self.api_key_edit.text().strip()
+        key = self.api_key_edit.text().strip()
+        if key:
+            QgsSettings().setValue(self._SETTINGS_KEY, key)
+        return key
 
     def log_msg(self, msg):
         self.log.append(msg)
 
     def _set_bbox_from_canvas(self):
-        from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsProject
+        from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform
         canvas = self.iface.mapCanvas()
         extent = canvas.extent()
         src_crs = canvas.mapSettings().destinationCrs()
@@ -162,9 +168,12 @@ class MeshCoreViewshedDock(QDockWidget):
     # ------------------------------------------------------------------
 
     def _run_fetch(self):
+        work_dir = self._work_dir()
+        if not work_dir:
+            return
         from .tasks.fetch_task import FetchTask
         self._on_task_started("Fetch Nodes")
-        task = FetchTask(REPO_ROOT, self.log_msg)
+        task = FetchTask(work_dir, self.log_msg)
         task.taskCompleted.connect(lambda: self._on_task_done("Fetch Nodes", True))
         task.taskTerminated.connect(lambda: self._on_task_done("Fetch Nodes", False, "task terminated"))
         QgsApplication.taskManager().addTask(task)
@@ -177,33 +186,45 @@ class MeshCoreViewshedDock(QDockWidget):
         if not api_key:
             self.log_msg("[Error] OpenTopography API key required.")
             return
+        work_dir = self._work_dir()
+        if not work_dir:
+            return
         from .tasks.dem_task import DemTask
         self._on_task_started("Download DEM")
-        task = DemTask(REPO_ROOT, self._bbox, api_key, self.log_msg)
+        task = DemTask(work_dir, self._bbox, api_key, self.log_msg)
         task.taskCompleted.connect(lambda: self._on_task_done("Download DEM", True))
         task.taskTerminated.connect(lambda: self._on_task_done("Download DEM", False, "task terminated"))
         QgsApplication.taskManager().addTask(task)
 
     def _run_viewshed(self):
+        work_dir = self._work_dir()
+        if not work_dir:
+            return
         from .tasks.viewshed_task import ViewshedTask
         self._on_task_started("Run Viewshed")
-        task = ViewshedTask(REPO_ROOT, self.log_msg, self._on_task_progress)
+        task = ViewshedTask(work_dir, self.log_msg, self._on_task_progress)
         task.taskCompleted.connect(lambda: self._on_task_done("Run Viewshed", True))
         task.taskTerminated.connect(lambda: self._on_task_done("Run Viewshed", False, "task terminated"))
         QgsApplication.taskManager().addTask(task)
 
     def _run_directional(self):
+        work_dir = self._work_dir()
+        if not work_dir:
+            return
         from .tasks.directional_task import DirectionalTask
         self._on_task_started("Directional Raster")
-        task = DirectionalTask(REPO_ROOT, self.log_msg)
+        task = DirectionalTask(work_dir, self.log_msg)
         task.taskCompleted.connect(lambda: self._on_task_done("Directional Raster", True))
         task.taskTerminated.connect(lambda: self._on_task_done("Directional Raster", False, "task terminated"))
         QgsApplication.taskManager().addTask(task)
 
     def _run_enrich(self):
+        work_dir = self._work_dir()
+        if not work_dir:
+            return
         from .tasks.enrich_task import EnrichTask
         self._on_task_started("Enrich Nodes")
-        task = EnrichTask(REPO_ROOT, self.log_msg)
+        task = EnrichTask(work_dir, self.log_msg)
         task.taskCompleted.connect(lambda: self._on_task_done("Enrich Nodes", True))
         task.taskTerminated.connect(lambda: self._on_task_done("Enrich Nodes", False, "task terminated"))
         QgsApplication.taskManager().addTask(task)
@@ -216,7 +237,10 @@ class MeshCoreViewshedDock(QDockWidget):
         if not api_key:
             self.log_msg("[Error] OpenTopography API key required.")
             return
-        # Chain tasks sequentially by connecting completed signals
+        work_dir = self._work_dir()
+        if not work_dir:
+            return
+
         from .tasks.fetch_task import FetchTask
         from .tasks.dem_task import DemTask
         from .tasks.viewshed_task import ViewshedTask
@@ -226,11 +250,11 @@ class MeshCoreViewshedDock(QDockWidget):
         self._set_buttons_enabled(False)
         self.progress_bar.setVisible(True)
 
-        fetch = FetchTask(REPO_ROOT, self.log_msg)
-        dem = DemTask(REPO_ROOT, self._bbox, api_key, self.log_msg)
-        vs = ViewshedTask(REPO_ROOT, self.log_msg, self._on_task_progress)
-        direc = DirectionalTask(REPO_ROOT, self.log_msg)
-        enrich = EnrichTask(REPO_ROOT, self.log_msg)
+        fetch = FetchTask(work_dir, self.log_msg)
+        dem = DemTask(work_dir, self._bbox, api_key, self.log_msg)
+        vs = ViewshedTask(work_dir, self.log_msg, self._on_task_progress)
+        direc = DirectionalTask(work_dir, self.log_msg)
+        enrich = EnrichTask(work_dir, self.log_msg)
 
         # Chain: each task triggers next on success
         fetch.taskCompleted.connect(lambda: QgsApplication.taskManager().addTask(dem))
@@ -239,7 +263,6 @@ class MeshCoreViewshedDock(QDockWidget):
         direc.taskCompleted.connect(lambda: QgsApplication.taskManager().addTask(enrich))
         enrich.taskCompleted.connect(lambda: self._on_task_done("Run All", True))
 
-        # Any failure aborts chain and re-enables UI
         for t, label in [(fetch, "Fetch"), (dem, "DEM"), (vs, "Viewshed"),
                          (direc, "Directional"), (enrich, "Enrich")]:
             t.taskTerminated.connect(
