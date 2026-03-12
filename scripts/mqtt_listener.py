@@ -19,17 +19,20 @@ logger = logging.getLogger(__name__)
 class MeshCoreMQTTListener:
     """Listen to MeshCore MQTT telemetry stream."""
     
+    # MeshCore device_role int -> human-readable type string
+    DEVICE_ROLES = {1: "Repeater", 2: "Companion", 3: "Room Server"}
+
     def __init__(self, broker: str, topics: list = None, output_file: str = None):
         """
         Initialize MQTT listener.
-        
+
         Args:
             broker: MQTT broker address
-            topics: List of topics to subscribe (defaults to all position topics)
+            topics: List of topics to subscribe (defaults to all MeshCore topics)
             output_file: Optional GeoJSON output file for streaming updates
         """
         self.broker = broker
-        self.topics = topics or ["*/position/*"]
+        self.topics = topics or ["meshcore/#"]
         self.output_file = output_file
         self.nodes = {}
         self.client = None
@@ -80,23 +83,41 @@ class MeshCoreMQTTListener:
         """
         try:
             data = json.loads(payload.decode())
-            node_id = data.get("id")
-            
-            if "latitude" in data and "longitude" in data:
-                self.nodes[node_id] = {
-                    "id": node_id,
-                    "name": data.get("name"),
-                    "latitude": float(data["latitude"]),
-                    "longitude": float(data["longitude"]),
-                    "altitude": float(data.get("altitude", 0)),
-                    "rssi": float(data.get("rssi")) if data.get("rssi") else None,
-                    "snr": float(data.get("snr")) if data.get("snr") else None,
-                    "timestamp": datetime.utcnow().isoformat()
-                }
-                logger.debug(f"Updated node {node_id}")
-                
-                if self.output_file:
-                    self.write_geojson()
+
+            lat = data.get("latitude")
+            lon = data.get("longitude")
+
+            # Skip nodes without position or at the null island (0, 0)
+            if lat is None or lon is None:
+                return
+            lat, lon = float(lat), float(lon)
+            if lat == 0.0 and lon == 0.0:
+                return
+
+            # Use public_key as the stable unique identifier when available
+            node_id = data.get("public_key") or data.get("id") or data.get("name")
+            if not node_id:
+                return
+
+            role_int = data.get("device_role")
+            node_type = self.DEVICE_ROLES.get(role_int) if role_int is not None else data.get("type", "unknown")
+
+            self.nodes[node_id] = {
+                "id": node_id,
+                "name": data.get("name"),
+                "type": node_type,
+                "latitude": lat,
+                "longitude": lon,
+                "altitude": float(data.get("altitude", 0)),
+                "rssi": float(data["rssi"]) if data.get("rssi") is not None else None,
+                "snr": float(data["snr"]) if data.get("snr") is not None else None,
+                "battery": float(data["battery"]) if data.get("battery") is not None else None,
+                "timestamp": datetime.utcnow().isoformat(),
+            }
+            logger.debug(f"Updated node {node_id}")
+
+            if self.output_file:
+                self.write_geojson()
         
         except json.JSONDecodeError:
             logger.warning(f"Failed to parse JSON from {topic}")
@@ -111,9 +132,9 @@ class MeshCoreMQTTListener:
                 "type": "Feature",
                 "geometry": {
                     "type": "Point",
-                    "coordinates": [node["longitude"], node["latitude"]]
+                    "coordinates": [node["longitude"], node["latitude"], node["altitude"]],
                 },
-                "properties": {k: v for k, v in node.items() if k not in ["latitude", "longitude"]}
+                "properties": {k: v for k, v in node.items() if k not in ["latitude", "longitude", "altitude"]},
             }
             features.append(feature)
         
@@ -165,8 +186,8 @@ def main():
     parser.add_argument(
         "--topics",
         nargs="+",
-        default=["*/position/*"],
-        help="MQTT topics to subscribe (default: */position/*)"
+        default=["meshcore/#"],
+        help="MQTT topics to subscribe (default: meshcore/#)"
     )
     
     args = parser.parse_args()

@@ -1,112 +1,164 @@
 # MeshCore_QGIS
 
-A Python toolkit for extracting live MeshCore mesh network data and performing geospatial analysis in QGIS to support repeater placement and coverage analysis.
+A Python toolkit for fetching live MeshCore and Meshtastic node positions and
+performing geospatial coverage analysis in QGIS to support repeater placement
+and network planning.
 
-**Status**: Phase 1 & 2 complete — foundation and script scaffolding in place.
+## What it does
 
-## Overview
+1. **Fetches node positions** from MeshCore and Meshtastic MQTT brokers (or the
+   MeshCore REST map API) and writes them as GeoJSON â€” one file per service.
+2. **Runs viewshed analysis** using GDAL/QGIS tools to compute what each repeater
+   node can see from its elevation.
+3. **Builds a cumulative coverage raster** showing which areas are reachable from
+   at least one node, and identifies candidate locations for new repeaters.
+4. **Creates a live QGIS project** with auto-refreshing layers so you can watch
+   results appear in real time while the pipeline runs headlessly from a terminal.
 
-This project pulls live node positions from multiple MeshCore data sources (MQTT, MESH-API, MeshCore Python API, map.meshcore.dev) and exports them as GeoJSON for QGIS analysis. The toolkit supports viewshed analysis for optimal repeater placement and coverage gap identification.
+## Quick start
 
-For the **complete project plan, data source details, and QGIS workflow**, see [FirstPlan.md](FirstPlan.md).
+### 1. Install dependencies
 
-## What's Implemented
-
-### Core Scripts (scaffolds with TODO implementations)
-- **`scripts/export_nodes.py`** — Extract node data from API, MQTT, CSV ? GeoJSON. Supports:
-  - MeshCore Python API (USB/BLE/TCP)
-  - MQTT gateway telemetry
-  - CSV input
-  
-- **`scripts/mqtt_listener.py`** — Subscribe to MeshCore MQTT broker and stream position updates to GeoJSON
-  
-- **`scripts/viewshed_batch.py`** — Batch viewshed analysis (single/cumulative/gap detection)
-
-### Configuration
-- `requirements.txt` — Python dependencies (meshcore, paho-mqtt, geojson, requests, python-dotenv)
-- `setup.py` — Package setup
-- `.gitignore` — Excludes venv, cache, QGIS autosaves, DEM files
-
-### Structure
 ```
-scripts/          # Core data extraction and analysis tools
-templates/        # QGIS project templates (TBD)
-data/             # Data outputs and samples
-docs/             # Documentation (TBD)
-tests/            # Unit tests (stubs)
-```
-
-## Quick Start
-
-### Setup environment
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 ```
 
-### Export nodes from MQTT
-```powershell
-python scripts/mqtt_listener.py --broker broker.meshcore.dev --output nodes.geojson
+Requires QGIS 3.16+ installed for viewshed analysis. The scripts auto-detect
+your QGIS installation â€” no manual PATH configuration needed.
+
+### 2. Configure VSCode (optional)
+
+Point VSCode at QGIS's bundled Python for IntelliSense:
+```
+python scripts/qgis_utils.py --write-vscode
 ```
 
-### Export nodes from MeshCore API (when implemented)
-```powershell
-python scripts/export_nodes.py --source api --port COM3 --output nodes.geojson
+### 3. Get a DEM
+
+Download elevation data for your area (free, requires free API key):
+```
+python scripts/fetch_dem.py --api-key YOUR_KEY --bbox WEST SOUTH EAST NORTH
 ```
 
-### Export nodes from MESH-API (when implemented)
-```powershell
-python scripts/export_nodes.py --source mesh-api --output nodes.geojson
+See [docs/dem_guide.md](docs/dem_guide.md) for dataset options and instructions
+for experienced GIS users who already have a DEM.
+
+### 4. Run the pipeline
+
+```
+python scripts/pipeline.py --dem data/dem.tif
 ```
 
-### Run viewshed analysis (requires DEM and node GeoJSON)
-```powershell
-python scripts/viewshed_batch.py --dem data/dem.tif --nodes nodes.geojson
+This fetches nodes from both MeshCore and Meshtastic, runs viewshed analysis
+for each service, and prints step-by-step progress. A QGIS project loaded with
+the output files will auto-refresh as each step completes.
+
+### 5. Create the QGIS project
+
+From the QGIS Python Console or a QGIS-aware shell:
+```
+python templates/create_qgis_project.py --dem data/dem.tif
 ```
 
-## Data Sources (from FirstPlan.md)
+Opens `project/mesh_coverage.qgz` with five auto-refreshing layers:
+DEM base â†’ MeshCore coverage raster â†’ Meshtastic coverage raster â†’
+MeshCore nodes (blue) â†’ Meshtastic nodes (green).
 
-| Source | Type | Notes |
-|--------|------|-------|
-| **map.meshcore.dev** | Web/Interactive | Live crowd-sourced node positions |
-| **MeshCore Python API** | Serial/BLE/TCP | Direct connection to node, returns lat/lon/alt/battery/uptime |
-| **MQTT Bridge** | JSON over MQTT | Gateway nodes stream position telemetry |
-| **MESH-API (GitHub)** | REST API | Bidirectional Meshtastic?MeshCore bridge with 30+ extensions |
-| **nodakmesh.org/meshcore/map** | Web | Regional filtering by node type |
+## Pipeline options
 
-## TODO (Implementation Priority)
+```
+python scripts/pipeline.py --help
 
-1. Implement MQTT GeoJSON parser in `mqtt_listener.py` (connects to live broker)
-2. Implement MESH-API REST fetcher in `export_nodes.py`
-3. Implement MeshCore Python API reader (USB/BLE/TCP)
-4. Implement map.meshcore.dev fetcher (REST/scrape)
-5. Integrate viewshed with PyQGIS or GDAL
-6. Add sample data and QGIS template
+--dem PATH           Path to DEM GeoTIFF (required for viewshed steps)
+--service meshcore meshtastic
+                     Services to process (default: both)
+--timeout 30         MQTT listen duration per service in seconds
+--skip-fetch         Use existing GeoJSON files, skip MQTT fetch
+--dry-run            Print steps without connecting to anything
+--check-env          Verify QGIS tools and environment, then exit
+```
+
+## Individual scripts
+
+| Script | Purpose |
+|--------|---------|
+| `scripts/pipeline.py` | Full orchestrator â€” fetch + viewshed + report |
+| `scripts/fetch_dem.py` | Download DEM from OpenTopography |
+| `scripts/export_nodes.py` | MeshCore node fetcher (MQTT or REST API) |
+| `scripts/meshtastic_fetcher.py` | Meshtastic node fetcher (MQTT) |
+| `scripts/mqtt_listener.py` | MeshCore live MQTT listener |
+| `scripts/viewshed_batch.py` | GDAL viewshed + cumulative raster + gap analysis |
+| `scripts/qgis_utils.py` | QGIS installation auto-detection and diagnostics |
+| `templates/create_qgis_project.py` | Build the dual-layer QGIS project |
+
+## Data sources
+
+| Service | Broker / URL | Topics |
+|---------|-------------|--------|
+| MeshCore MQTT | `broker.meshcore.dev:1883` | `meshcore/#` |
+| MeshCore REST | `https://map.meshcore.dev/api/nodes` | â€” |
+| Meshtastic MQTT | `mqtt.meshtastic.org:1883` | `msh/#` |
+
+## GeoJSON schema
+
+Both services output the same schema so QGIS layer styles work across both:
+
+```json
+{
+  "type": "FeatureCollection",
+  "features": [{
+    "type": "Feature",
+    "geometry": { "type": "Point", "coordinates": [lon, lat, alt] },
+    "properties": {
+      "id": "string",
+      "name": "string",
+      "type": "Repeater|Companion|Router|Gateway",
+      "rssi": -80,
+      "snr": 5.0,
+      "battery": 85,
+      "timestamp": "2026-01-01T00:00:00"
+    }
+  }]
+}
+```
+
+Fields unavailable for a given service are set to `null` (not omitted), keeping
+the schema consistent. Nodes at coordinates (0, 0) are filtered out.
+
+## Environment check
+
+```
+python scripts/qgis_utils.py
+```
+
+Prints detected QGIS paths, Python interpreter, and GDAL tool locations. Useful
+for diagnosing why viewshed analysis isn't finding QGIS tools.
+
+## Running tests
+
+```
+python -m pytest tests/ -v
+```
+
+Tests cover GeoJSON schema validation, coordinate order, null-island filtering,
+MQTT message parsing, and Meshtastic state machine logic. No live broker or
+DEM needed.
 
 ## Dependencies
 
 - Python 3.8+
-- meshcore >= 0.1.0
-- paho-mqtt >= 1.6.1
-- geojson >= 2.5.0
-- requests >= 2.28.0
-- python-dotenv >= 0.21.0
-- QGIS 3.16+ (desktop, for viewshed analysis)
+- `paho-mqtt` â€” MQTT client
+- `requests` â€” REST API fetches
+- `python-dotenv` â€” `.env` file support
+- `numpy` â€” cumulative raster stacking
+- `meshtastic` â€” Meshtastic MQTT message type constants
+- QGIS 3.16+ â€” `gdal_viewshed` and `qgis_process` for viewshed analysis
 
-## References
+## Future: Reticulum/RNode layer
 
-- **FirstPlan.md** — Full project plan, data sourcing, QGIS workflow, best practices
-- [map.meshcore.dev](https://map.meshcore.dev)
-- [nodakmesh.org/meshcore/map](https://nodakmesh.org/meshcore/map/)
-- [MESH-API GitHub](https://github.com/meshtastic/MESH-API)
-- [MeshCore Documentation](https://meshcore.dev)
-- [QGIS Visibility Analysis Plugin](https://plugins.qgis.org)
+A third layer for Reticulum network nodes is planned once MeshCore and Meshtastic
+layers are stable. See [FirstPlan.md](FirstPlan.md) for details.
 
 ## License
 
 TBD
-
-## Contact
-
-[your contact info]

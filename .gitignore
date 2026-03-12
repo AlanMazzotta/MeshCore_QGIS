@@ -34,12 +34,15 @@ wheels/
 # Project-specific
 *.qgz.autosave
 *.qgz~
+*.qgz
 *.tif
 *.geotiff
 .env
 .env.local
 data/*.tif
 data/*.dem
+data/*.geojson
+viewsheds/
 
 # OS
 .DS_Store

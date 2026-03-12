@@ -8,9 +8,23 @@ Generates viewsheds from DEM and observer point layer, supports:
 """
 
 import argparse
+import json
 import logging
+import subprocess
+import sys
+import tempfile
 from typing import List, Dict, Any, Optional
 from pathlib import Path
+
+# Soft-import so the module loads even without a QGIS environment
+try:
+    from scripts.qgis_utils import find_tool
+except ImportError:
+    try:
+        from qgis_utils import find_tool
+    except ImportError:
+        def find_tool(name: str) -> str:  # type: ignore[misc]
+            return name
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,18 +33,21 @@ logger = logging.getLogger(__name__)
 class ViewshedAnalyzer:
     """Wrapper for QGIS viewshed analysis."""
     
-    def __init__(self, dem_path: str, output_dir: str = "./viewsheds"):
+    def __init__(self, dem_path: str, output_dir: str = "./viewsheds", service_name: str = ""):
         """
         Initialize viewshed analyzer.
-        
+
         Args:
             dem_path: Path to DEM GeoTIFF file
-            output_dir: Directory for output rasters
+            output_dir: Base directory for output rasters
+            service_name: Optional service label (e.g. 'meshcore', 'meshtastic').
+                          When provided, outputs go into output_dir/service_name/.
         """
         self.dem_path = dem_path
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(exist_ok=True)
-        
+        base = Path(output_dir)
+        self.output_dir = base / service_name if service_name else base
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
         if not Path(dem_path).exists():
             raise FileNotFoundError(f"DEM not found: {dem_path}")
     
@@ -54,12 +71,77 @@ class ViewshedAnalyzer:
         output_path = self.output_dir / output_name
         
         logger.info(f"Generating viewshed from ({lat}, {lon})")
-        
-        # TODO: Implement QGIS viewshed analysis via:
-        # - PyQGIS API
-        # - GDAL gdal_viewshed command
-        # - QGIS Processing API
-        
+
+        # Try qgis_process first (better CRS handling), fall back to gdal_viewshed directly.
+        qgis_process = find_tool("qgis_process")
+        gdal_viewshed = find_tool("gdal_viewshed")
+
+        success = False
+
+        # --- Primary: qgis_process run gdal:viewshed ---
+        # Observer point must be passed as a temporary GeoJSON file.
+        with tempfile.NamedTemporaryFile(
+            suffix=".geojson", mode="w", delete=False
+        ) as tmp:
+            tmp_observer = tmp.name
+            json.dump({
+                "type": "FeatureCollection",
+                "features": [{
+                    "type": "Feature",
+                    "geometry": {"type": "Point", "coordinates": [lon, lat]},
+                    "properties": {},
+                }],
+            }, tmp)
+
+        try:
+            cmd_qp = [
+                qgis_process, "run", "gdal:viewshed",
+                f"--INPUT={self.dem_path}",
+                "--BAND=1",
+                f"--OBSERVER_HEIGHT={observer_height}",
+                "--TARGET_HEIGHT=0",
+                "--MAX_DISTANCE=-1",
+                f"--OUTPUT={output_path}",
+            ]
+            result = subprocess.run(cmd_qp, capture_output=True, text=True, check=True)
+            logger.debug(result.stdout)
+            success = True
+        except FileNotFoundError:
+            logger.debug("qgis_process not found; falling back to gdal_viewshed")
+        except subprocess.CalledProcessError as e:
+            logger.debug(f"qgis_process gdal:viewshed failed: {e.stderr.strip()}")
+        finally:
+            Path(tmp_observer).unlink(missing_ok=True)
+
+        # --- Fallback: gdal_viewshed directly ---
+        if not success:
+            cmd = [
+                gdal_viewshed,
+                "-ox", str(lon),
+                "-oy", str(lat),
+                "-oz", str(observer_height),
+                "-of", "GTiff",
+                self.dem_path,
+                str(output_path),
+            ]
+            try:
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                logger.debug(result.stdout)
+                success = True
+            except FileNotFoundError:
+                logger.error(
+                    "Neither qgis_process nor gdal_viewshed found. "
+                    "Install QGIS or set the QGIS_BIN environment variable. "
+                    "Run: python scripts/qgis_utils.py for diagnostics."
+                )
+                return None
+            except subprocess.CalledProcessError as e:
+                logger.error(f"gdal_viewshed failed for ({lat}, {lon}): {e.stderr}")
+                return None
+
+        if not success:
+            return None
+
         logger.info(f"Output: {output_path}")
         return str(output_path)
     
@@ -78,13 +160,63 @@ class ViewshedAnalyzer:
         output_path = self.output_dir / output_name
         
         logger.info(f"Generating cumulative viewshed from {len(points)} points")
-        
-        # TODO: Implement stacking logic:
-        # 1. Generate individual viewsheds
-        # 2. Sum rasters (areas visible from N nodes)
-        # 3. Create coverage map
-        
-        logger.info(f"Output: {output_path}")
+
+        try:
+            import numpy as np
+            from osgeo import gdal
+        except ImportError as exc:
+            logger.error(
+                f"Missing dependency for cumulative viewshed ({exc}). "
+                "Install numpy and GDAL (osgeo) — both are available in the QGIS Python environment."
+            )
+            return None
+
+        individual_paths = []
+        for i, pt in enumerate(points):
+            name = f"_vs_tmp_{i:04d}.tif"
+            path = self.single_viewshed(
+                pt["lat"], pt["lon"],
+                observer_height=pt.get("observer_height", 2.0),
+                output_name=name,
+            )
+            if path:
+                individual_paths.append(path)
+
+        if not individual_paths:
+            logger.error("No individual viewsheds generated; cannot build cumulative raster.")
+            return None
+
+        # Open first raster to get shape/geotransform/projection
+        ds0 = gdal.Open(individual_paths[0])
+        cols = ds0.RasterXSize
+        rows = ds0.RasterYSize
+        gt = ds0.GetGeoTransform()
+        proj = ds0.GetProjection()
+        ds0 = None
+
+        cumulative = np.zeros((rows, cols), dtype=np.uint16)
+        for path in individual_paths:
+            ds = gdal.Open(path)
+            band = ds.GetRasterBand(1)
+            arr = band.ReadAsArray().astype(np.uint16)
+            # gdal_viewshed outputs 255 for visible, 0 for not visible
+            cumulative += (arr > 0).astype(np.uint16)
+            ds = None
+
+        driver = gdal.GetDriverByName("GTiff")
+        out_ds = driver.Create(str(output_path), cols, rows, 1, gdal.GDT_UInt16)
+        out_ds.SetGeoTransform(gt)
+        out_ds.SetProjection(proj)
+        out_ds.GetRasterBand(1).WriteArray(cumulative)
+        out_ds.GetRasterBand(1).SetNoDataValue(0)
+        out_ds.FlushCache()
+        out_ds = None
+
+        # Remove temp individual viewsheds
+        for path in individual_paths:
+            Path(path).unlink(missing_ok=True)
+
+        logger.info(f"Cumulative viewshed written to {output_path}")
         return str(output_path)
     
     def gap_analysis(self, cumulative_viewshed: str, threshold: int = 1) -> Dict[str, Any]:
@@ -99,36 +231,82 @@ class ViewshedAnalyzer:
             Dictionary with gap statistics
         """
         logger.info(f"Analyzing coverage gaps (threshold: {threshold} nodes)")
-        
-        # TODO: Implement gap analysis:
-        # 1. Load cumulative raster
-        # 2. Find pixels with visibility < threshold
-        # 3. Calculate gap area and centroid
-        # 4. Return as GeoJSON for candidate repeater placement
-        
+
+        try:
+            import numpy as np
+            from osgeo import gdal, osr
+        except ImportError as exc:
+            logger.error(f"Missing dependency for gap analysis ({exc}).")
+            return {"error": str(exc)}
+
+        ds = gdal.Open(cumulative_viewshed)
+        if ds is None:
+            logger.error(f"Cannot open raster: {cumulative_viewshed}")
+            return {}
+
+        band = ds.GetRasterBand(1)
+        arr = band.ReadAsArray()
+        nodata = band.GetNoDataValue()
+        gt = ds.GetGeoTransform()
+        ds = None
+
+        valid_mask = arr != nodata if nodata is not None else np.ones_like(arr, dtype=bool)
+        covered_mask = (arr >= threshold) & valid_mask
+        gap_mask = (~covered_mask) & valid_mask
+
+        # Pixel area in degrees² — convert to approximate m² using mid-latitude
+        pixel_width_deg = abs(gt[1])
+        pixel_height_deg = abs(gt[5])
+        origin_lat = gt[3]
+        mid_lat = origin_lat - (arr.shape[0] / 2) * pixel_height_deg
+        meters_per_deg_lat = 111_320.0
+        meters_per_deg_lon = 111_320.0 * abs(__import__("math").cos(__import__("math").radians(mid_lat)))
+        pixel_area_m2 = pixel_width_deg * meters_per_deg_lon * pixel_height_deg * meters_per_deg_lat
+
+        total_pixels = int(valid_mask.sum())
+        covered_pixels = int(covered_mask.sum())
+        gap_pixels = int(gap_mask.sum())
+
+        # Find centroid of the largest contiguous gap region as a repeater candidate
+        gap_candidates = []
+        gap_rows, gap_cols = np.where(gap_mask)
+        if gap_rows.size > 0:
+            centroid_row = int(gap_rows.mean())
+            centroid_col = int(gap_cols.mean())
+            cand_lon = gt[0] + centroid_col * gt[1]
+            cand_lat = gt[3] + centroid_row * gt[5]
+            gap_candidates.append({"latitude": round(cand_lat, 6), "longitude": round(cand_lon, 6)})
+
         stats = {
-            "total_area_m2": 0,
-            "covered_area_m2": 0,
-            "gap_area_m2": 0,
-            "coverage_percent": 0.0,
-            "gap_candidates": []
+            "total_area_m2": round(total_pixels * pixel_area_m2),
+            "covered_area_m2": round(covered_pixels * pixel_area_m2),
+            "gap_area_m2": round(gap_pixels * pixel_area_m2),
+            "coverage_percent": round(covered_pixels / total_pixels * 100, 2) if total_pixels else 0.0,
+            "gap_candidates": gap_candidates,
         }
-        
+
+        logger.info(
+            f"Coverage: {stats['coverage_percent']}% "
+            f"({covered_pixels}/{total_pixels} pixels, threshold={threshold})"
+        )
         return stats
 
 
 class BatchViewshedProcessor:
     """Process multiple viewshed analyses."""
     
-    def __init__(self, dem_path: str, nodes_geojson: str):
+    def __init__(self, dem_path: str, nodes_geojson: str, output_dir: str = "./viewsheds",
+                 service_name: str = ""):
         """
         Initialize batch processor.
-        
+
         Args:
             dem_path: Path to DEM GeoTIFF
             nodes_geojson: Path to nodes GeoJSON layer
+            output_dir: Base output directory for viewshed rasters
+            service_name: Service label used as a sub-directory (e.g. 'meshcore')
         """
-        self.analyzer = ViewshedAnalyzer(dem_path)
+        self.analyzer = ViewshedAnalyzer(dem_path, output_dir=output_dir, service_name=service_name)
         self.nodes_geojson = nodes_geojson
         self.results = {}
     
@@ -218,14 +396,22 @@ def main():
     parser.add_argument(
         "--output-dir",
         default="./viewsheds",
-        help="Output directory for viewshed rasters (default: ./viewsheds)"
+        help="Base output directory for viewshed rasters (default: ./viewsheds)"
     )
-    
+    parser.add_argument(
+        "--service",
+        default="",
+        help="Service name sub-directory (e.g. 'meshcore' or 'meshtastic')"
+    )
+
     args = parser.parse_args()
-    
+
     try:
-        processor = BatchViewshedProcessor(args.dem, args.nodes)
-        processor.analyzer.output_dir = Path(args.output_dir)
+        processor = BatchViewshedProcessor(
+            args.dem, args.nodes,
+            output_dir=args.output_dir,
+            service_name=args.service,
+        )
         results = processor.process_all()
         
         logger.info(f"✓ Processed {results.get('repeaters_processed', 0)} repeaters")
