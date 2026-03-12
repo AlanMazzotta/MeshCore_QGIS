@@ -1,0 +1,250 @@
+import os
+from qgis.PyQt.QtWidgets import (
+    QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
+    QPushButton, QLineEdit, QLabel, QProgressBar,
+    QTextEdit, QGroupBox, QSizePolicy
+)
+from qgis.PyQt.QtCore import Qt, pyqtSlot
+from qgis.core import QgsApplication, QgsTaskManager
+
+PLUGIN_DIR = os.path.dirname(__file__)
+REPO_ROOT = os.path.abspath(os.path.join(PLUGIN_DIR, "..", ".."))
+
+
+class MeshCoreViewshedDock(QDockWidget):
+    default_area = Qt.RightDockWidgetArea
+
+    def __init__(self, iface, parent=None):
+        super().__init__("MeshCore Viewshed", parent)
+        self.iface = iface
+        self.setObjectName("MeshCoreViewshedDock")
+        self.setMinimumWidth(280)
+
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(8, 8, 8, 8)
+        layout.setSpacing(6)
+
+        # --- API key ---
+        api_group = QGroupBox("OpenTopography API Key")
+        api_layout = QVBoxLayout(api_group)
+        self.api_key_edit = QLineEdit()
+        self.api_key_edit.setEchoMode(QLineEdit.Password)
+        self.api_key_edit.setPlaceholderText("Required for DEM download")
+        self._load_api_key()
+        api_layout.addWidget(self.api_key_edit)
+        layout.addWidget(api_group)
+
+        # --- Region ---
+        region_group = QGroupBox("Region")
+        region_layout = QVBoxLayout(region_group)
+        self.bbox_btn = QPushButton("Use Current Canvas Extent")
+        self.bbox_btn.clicked.connect(self._set_bbox_from_canvas)
+        self.bbox_label = QLabel("No extent set")
+        self.bbox_label.setWordWrap(True)
+        self.bbox_label.setStyleSheet("color: gray; font-size: 10px;")
+        region_layout.addWidget(self.bbox_btn)
+        region_layout.addWidget(self.bbox_label)
+        layout.addWidget(region_group)
+
+        # --- Pipeline steps ---
+        steps_group = QGroupBox("Pipeline Steps")
+        steps_layout = QVBoxLayout(steps_group)
+
+        self.btn_fetch = QPushButton("1. Fetch Nodes")
+        self.btn_dem = QPushButton("2. Download DEM")
+        self.btn_viewshed = QPushButton("3. Run Viewshed")
+        self.btn_directional = QPushButton("4. Directional Raster")
+        self.btn_enrich = QPushButton("5. Enrich Nodes")
+
+        for btn in (self.btn_fetch, self.btn_dem, self.btn_viewshed,
+                    self.btn_directional, self.btn_enrich):
+            steps_layout.addWidget(btn)
+
+        layout.addWidget(steps_group)
+
+        # --- Run All ---
+        self.btn_run_all = QPushButton("Run All")
+        self.btn_run_all.setStyleSheet(
+            "QPushButton { background-color: #2d6a4f; color: white; font-weight: bold; padding: 6px; }"
+            "QPushButton:hover { background-color: #40916c; }"
+            "QPushButton:disabled { background-color: #888; }"
+        )
+        layout.addWidget(self.btn_run_all)
+
+        # --- Progress ---
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        self.progress_bar.setValue(0)
+        self.progress_bar.setVisible(False)
+        layout.addWidget(self.progress_bar)
+
+        # --- Log ---
+        self.log = QTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setMaximumHeight(150)
+        self.log.setStyleSheet("font-size: 10px; font-family: monospace;")
+        layout.addWidget(self.log)
+
+        layout.addStretch()
+        self.setWidget(container)
+
+        # Wire buttons
+        self.btn_fetch.clicked.connect(self._run_fetch)
+        self.btn_dem.clicked.connect(self._run_dem)
+        self.btn_viewshed.clicked.connect(self._run_viewshed)
+        self.btn_directional.clicked.connect(self._run_directional)
+        self.btn_enrich.clicked.connect(self._run_enrich)
+        self.btn_run_all.clicked.connect(self._run_all)
+
+        self._bbox = None  # (west, south, east, north) in WGS84
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
+
+    def _load_api_key(self):
+        env_path = os.path.join(REPO_ROOT, ".env")
+        if os.path.exists(env_path):
+            with open(env_path) as f:
+                for line in f:
+                    if line.startswith("OPENTOPO_API_KEY"):
+                        key = line.split("=", 1)[-1].strip().strip('"').strip("'")
+                        self.api_key_edit.setText(key)
+                        break
+
+    def _get_api_key(self):
+        return self.api_key_edit.text().strip()
+
+    def log_msg(self, msg):
+        self.log.append(msg)
+
+    def _set_bbox_from_canvas(self):
+        from qgis.core import QgsCoordinateReferenceSystem, QgsCoordinateTransform, QgsProject
+        canvas = self.iface.mapCanvas()
+        extent = canvas.extent()
+        src_crs = canvas.mapSettings().destinationCrs()
+        wgs84 = QgsCoordinateReferenceSystem("EPSG:4326")
+        xform = QgsCoordinateTransform(src_crs, wgs84, QgsProject.instance())
+        rect = xform.transformBoundingBox(extent)
+        self._bbox = (rect.xMinimum(), rect.yMinimum(), rect.xMaximum(), rect.yMaximum())
+        self.bbox_label.setText(
+            f"W:{self._bbox[0]:.3f} S:{self._bbox[1]:.3f} "
+            f"E:{self._bbox[2]:.3f} N:{self._bbox[3]:.3f}"
+        )
+        self.bbox_label.setStyleSheet("color: white; font-size: 10px;")
+        self.log_msg(f"[Region] Canvas extent captured: {self._bbox}")
+
+    def _set_buttons_enabled(self, enabled):
+        for btn in (self.btn_fetch, self.btn_dem, self.btn_viewshed,
+                    self.btn_directional, self.btn_enrich, self.btn_run_all):
+            btn.setEnabled(enabled)
+
+    def _on_task_started(self, label):
+        self._set_buttons_enabled(False)
+        self.progress_bar.setVisible(True)
+        self.progress_bar.setValue(0)
+        self.log_msg(f"[Start] {label}")
+
+    def _on_task_progress(self, pct):
+        self.progress_bar.setValue(int(pct))
+
+    def _on_task_done(self, label, success, message=""):
+        self._set_buttons_enabled(True)
+        self.progress_bar.setVisible(False)
+        if success:
+            self.log_msg(f"[Done] {label}")
+        else:
+            self.log_msg(f"[Error] {label}: {message}")
+
+    # ------------------------------------------------------------------
+    # Task launchers
+    # ------------------------------------------------------------------
+
+    def _run_fetch(self):
+        from .tasks.fetch_task import FetchTask
+        self._on_task_started("Fetch Nodes")
+        task = FetchTask(REPO_ROOT, self.log_msg)
+        task.taskCompleted.connect(lambda: self._on_task_done("Fetch Nodes", True))
+        task.taskTerminated.connect(lambda: self._on_task_done("Fetch Nodes", False, "task terminated"))
+        QgsApplication.taskManager().addTask(task)
+
+    def _run_dem(self):
+        if not self._bbox:
+            self.log_msg("[Error] Set canvas extent first.")
+            return
+        api_key = self._get_api_key()
+        if not api_key:
+            self.log_msg("[Error] OpenTopography API key required.")
+            return
+        from .tasks.dem_task import DemTask
+        self._on_task_started("Download DEM")
+        task = DemTask(REPO_ROOT, self._bbox, api_key, self.log_msg)
+        task.taskCompleted.connect(lambda: self._on_task_done("Download DEM", True))
+        task.taskTerminated.connect(lambda: self._on_task_done("Download DEM", False, "task terminated"))
+        QgsApplication.taskManager().addTask(task)
+
+    def _run_viewshed(self):
+        from .tasks.viewshed_task import ViewshedTask
+        self._on_task_started("Run Viewshed")
+        task = ViewshedTask(REPO_ROOT, self.log_msg, self._on_task_progress)
+        task.taskCompleted.connect(lambda: self._on_task_done("Run Viewshed", True))
+        task.taskTerminated.connect(lambda: self._on_task_done("Run Viewshed", False, "task terminated"))
+        QgsApplication.taskManager().addTask(task)
+
+    def _run_directional(self):
+        from .tasks.directional_task import DirectionalTask
+        self._on_task_started("Directional Raster")
+        task = DirectionalTask(REPO_ROOT, self.log_msg)
+        task.taskCompleted.connect(lambda: self._on_task_done("Directional Raster", True))
+        task.taskTerminated.connect(lambda: self._on_task_done("Directional Raster", False, "task terminated"))
+        QgsApplication.taskManager().addTask(task)
+
+    def _run_enrich(self):
+        from .tasks.enrich_task import EnrichTask
+        self._on_task_started("Enrich Nodes")
+        task = EnrichTask(REPO_ROOT, self.log_msg)
+        task.taskCompleted.connect(lambda: self._on_task_done("Enrich Nodes", True))
+        task.taskTerminated.connect(lambda: self._on_task_done("Enrich Nodes", False, "task terminated"))
+        QgsApplication.taskManager().addTask(task)
+
+    def _run_all(self):
+        if not self._bbox:
+            self.log_msg("[Error] Set canvas extent first.")
+            return
+        api_key = self._get_api_key()
+        if not api_key:
+            self.log_msg("[Error] OpenTopography API key required.")
+            return
+        # Chain tasks sequentially by connecting completed signals
+        from .tasks.fetch_task import FetchTask
+        from .tasks.dem_task import DemTask
+        from .tasks.viewshed_task import ViewshedTask
+        from .tasks.directional_task import DirectionalTask
+        from .tasks.enrich_task import EnrichTask
+
+        self._set_buttons_enabled(False)
+        self.progress_bar.setVisible(True)
+
+        fetch = FetchTask(REPO_ROOT, self.log_msg)
+        dem = DemTask(REPO_ROOT, self._bbox, api_key, self.log_msg)
+        vs = ViewshedTask(REPO_ROOT, self.log_msg, self._on_task_progress)
+        direc = DirectionalTask(REPO_ROOT, self.log_msg)
+        enrich = EnrichTask(REPO_ROOT, self.log_msg)
+
+        # Chain: each task triggers next on success
+        fetch.taskCompleted.connect(lambda: QgsApplication.taskManager().addTask(dem))
+        dem.taskCompleted.connect(lambda: QgsApplication.taskManager().addTask(vs))
+        vs.taskCompleted.connect(lambda: QgsApplication.taskManager().addTask(direc))
+        direc.taskCompleted.connect(lambda: QgsApplication.taskManager().addTask(enrich))
+        enrich.taskCompleted.connect(lambda: self._on_task_done("Run All", True))
+
+        # Any failure aborts chain and re-enables UI
+        for t, label in [(fetch, "Fetch"), (dem, "DEM"), (vs, "Viewshed"),
+                         (direc, "Directional"), (enrich, "Enrich")]:
+            t.taskTerminated.connect(
+                lambda lbl=label: self._on_task_done("Run All", False, f"{lbl} failed")
+            )
+
+        self.log_msg("[Run All] Starting pipeline...")
+        QgsApplication.taskManager().addTask(fetch)

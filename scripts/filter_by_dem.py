@@ -36,6 +36,33 @@ def get_dem_bbox(dem_path: str):
     return west, south, east, north
 
 
+def filter_nodes(nodes_path: str, dem_path: str, output_path: str = None) -> int:
+    """Filter nodes GeoJSON to DEM extent. Returns count of kept nodes."""
+    west, south, east, north = get_dem_bbox(dem_path)
+    print(f"DEM extent: W={west:.4f} S={south:.4f} E={east:.4f} N={north:.4f}")
+
+    with open(nodes_path) as f:
+        gj = json.load(f)
+
+    total = len(gj["features"])
+    gj["features"] = [
+        f for f in gj["features"]
+        if west <= f["geometry"]["coordinates"][0] <= east
+        and south <= f["geometry"]["coordinates"][1] <= north
+    ]
+    if "metadata" not in gj:
+        gj["metadata"] = {}
+    gj["metadata"]["count"] = len(gj["features"])
+
+    out = output_path or nodes_path
+    with open(out, "w") as f:
+        json.dump(gj, f, indent=2)
+
+    kept = len(gj["features"])
+    print(f"Filtered {total} -> {kept} nodes within DEM extent")
+    return kept
+
+
 def main():
     parser = argparse.ArgumentParser(description="Filter nodes to DEM extent")
     parser.add_argument("--nodes", default="data/meshcore_nodes.geojson")

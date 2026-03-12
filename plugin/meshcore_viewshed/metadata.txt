@@ -1,0 +1,16 @@
+[general]
+name=MeshCore Viewshed
+qgisMinimumVersion=3.16
+description=Terrain line-of-sight viewshed analysis for MeshCore repeater networks. Fetches live node data, downloads DEM, runs per-node viewshed analysis, and loads results as QGIS layers.
+version=0.1.0
+author=AlanMazzotta
+email=
+about=Pulls repeater positions from the public MeshCore map API, downloads a Copernicus 30m DEM via OpenTopography, runs GDAL viewshed analysis for every node, stacks them into a cumulative coverage raster, generates a directional coverage raster (8 compass sectors), and enriches the node layer with coverage area, peer connectivity, and dominant direction attributes.
+tracker=https://github.com/AlanMazzotta/MeshCore_QGIS/issues
+repository=https://github.com/AlanMazzotta/MeshCore_QGIS
+tags=mesh,radio,coverage,viewshed,terrain,RF,MeshCore
+homepage=https://github.com/AlanMazzotta/MeshCore_QGIS
+category=Analysis
+icon=icon.png
+experimental=True
+deprecated=False
