@@ -168,19 +168,20 @@ def run(viewshed_path: str, nodes_path: str, output_path: str, n_sectors: int):
                            ["COMPRESS=LZW", "TILED=YES"])
     out_ds.SetGeoTransform(gt)
     out_ds.SetProjection(projection)
-    out_band = out_ds.GetRasterBand(1)
-    out_band.SetNoDataValue(0)
-    out_band.WriteArray(sector)
-
-    # Write colour table so QGIS can auto-style
+    # Build colour table before writing data — TIFF locks PhotometricInterpretation
+    # once data is written, so the palette must be set first.
     ct = gdal.ColorTable()
     ct.SetColorEntry(0, (0, 0, 0, 0))  # transparent nodata
     colors = SECTOR_COLORS_8 if n_sectors == 8 else SECTOR_COLORS_4
     labels = SECTOR_LABELS[n_sectors]
     for idx, (r, g, b) in enumerate(colors):
         ct.SetColorEntry(idx + 1, (r, g, b, 255))
+
+    out_band = out_ds.GetRasterBand(1)
+    out_band.SetNoDataValue(0)
     out_band.SetRasterColorTable(ct)
     out_band.SetRasterColorInterpretation(gdal.GCI_PaletteIndex)
+    out_band.WriteArray(sector)
 
     out_ds.FlushCache()
     out_ds = None
