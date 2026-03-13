@@ -38,20 +38,16 @@ project/
 *.qgz.autosave
 *.qgz~
 *.qgz
-*.tif
-*.geotiff
 .env
 .env.local
+
+# Pipeline outputs — generated at runtime, never commit
+*.tif
+*.geotiff
+data/*.geojson
 data/*.tif
 data/*.dem
-# Allow processed GeoJSON outputs (public API data, no private fields)
-!data/meshcore_nodes.geojson
-!data/meshcore_nodes_plus.geojson
-# Exclude individual viewshed TIFs (2.2GB, regenerable); allow aggregate rasters
-viewsheds/meshcore/viewshed_*.tif
-viewsheds/meshcore/*.aux.xml
-!viewsheds/meshcore/cumulative_viewshed.tif
-!viewsheds/meshcore/directional_viewshed.tif
+viewsheds/
 
 # OS
 .DS_Store
