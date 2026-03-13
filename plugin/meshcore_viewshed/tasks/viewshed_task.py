@@ -55,4 +55,7 @@ class ViewshedTask(QgsTask):
                 layer = QgsVectorLayer(path, name, "ogr")
             if layer.isValid():
                 QgsProject.instance().addMapLayer(layer)
+                if is_raster:
+                    from meshcore_viewshed.symbology import apply_coverage_symbology
+                    apply_coverage_symbology(layer)
                 self.log(f"[Viewshed] Layer loaded: {name}")

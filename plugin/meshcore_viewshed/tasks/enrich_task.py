@@ -45,6 +45,8 @@ class EnrichTask(QgsTask):
         layer = QgsVectorLayer(path, layer_name, "ogr")
         if layer.isValid():
             QgsProject.instance().addMapLayer(layer)
+            from meshcore_viewshed.symbology import apply_nodes_plus_symbology
+            apply_nodes_plus_symbology(layer)
             self.log(f"[Enrich] Layer loaded: {layer.featureCount()} nodes with derived attributes.")
         else:
             self.log("[Enrich] Layer invalid.")
