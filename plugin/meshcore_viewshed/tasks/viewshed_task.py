@@ -4,11 +4,10 @@ from qgis.core import QgsTask, QgsRasterLayer, QgsProject, QgsVectorLayer
 
 
 class ViewshedTask(QgsTask):
-    def __init__(self, work_dir, log_fn, progress_fn=None):
+    def __init__(self, work_dir, log_fn):
         super().__init__("MeshCore: Run Viewshed", QgsTask.CanCancel)
         self.work_dir = work_dir
         self.log = log_fn
-        self.progress_fn = progress_fn
         self.error = None
 
     def run(self):
@@ -26,8 +25,6 @@ class ViewshedTask(QgsTask):
             )
             processor.process_all()
             self.setProgress(100)
-            if self.progress_fn:
-                self.progress_fn(100)
             return True
         except BaseException as e:
             self.error = traceback.format_exc()

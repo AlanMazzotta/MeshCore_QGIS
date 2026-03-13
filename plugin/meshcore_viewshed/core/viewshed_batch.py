@@ -103,7 +103,8 @@ class ViewshedAnalyzer:
                 "--MAX_DISTANCE=-1",
                 f"--OUTPUT={output_path}",
             ]
-            result = subprocess.run(cmd_qp, capture_output=True, text=True, check=True)
+            _kw = {"creationflags": subprocess.CREATE_NO_WINDOW} if hasattr(subprocess, "CREATE_NO_WINDOW") else {}
+            result = subprocess.run(cmd_qp, capture_output=True, text=True, check=True, **_kw)
             logger.debug(result.stdout)
             success = True
         except FileNotFoundError:
@@ -125,7 +126,7 @@ class ViewshedAnalyzer:
                 str(output_path),
             ]
             try:
-                result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+                result = subprocess.run(cmd, capture_output=True, text=True, check=True, **_kw)
                 logger.debug(result.stdout)
                 success = True
             except FileNotFoundError:

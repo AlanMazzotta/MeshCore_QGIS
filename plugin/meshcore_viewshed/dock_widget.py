@@ -202,7 +202,8 @@ class MeshCoreViewshedDock(QDockWidget):
             return
         from .tasks.viewshed_task import ViewshedTask
         self._on_task_started("Run Viewshed")
-        task = ViewshedTask(work_dir, self.log_msg, self._on_task_progress)
+        task = ViewshedTask(work_dir, self.log_msg)
+        task.progressChanged.connect(self._on_task_progress)
         task.taskCompleted.connect(lambda: self._on_task_done("Run Viewshed", True))
         task.taskTerminated.connect(lambda t=task: self._on_task_done("Run Viewshed", False, t.error or "task terminated"))
         QgsApplication.taskManager().addTask(task)
@@ -252,7 +253,8 @@ class MeshCoreViewshedDock(QDockWidget):
 
         fetch = FetchTask(work_dir, self.log_msg)
         dem = DemTask(work_dir, self._bbox, api_key, self.log_msg)
-        vs = ViewshedTask(work_dir, self.log_msg, self._on_task_progress)
+        vs = ViewshedTask(work_dir, self.log_msg)
+        vs.progressChanged.connect(self._on_task_progress)
         direc = DirectionalTask(work_dir, self.log_msg)
         enrich = EnrichTask(work_dir, self.log_msg)
 
