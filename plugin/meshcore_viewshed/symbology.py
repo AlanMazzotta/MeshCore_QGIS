@@ -49,37 +49,63 @@ def apply_coverage_symbology(layer) -> None:
 
 # (filter_expr, label, (R, G, B), size_mm, stroke_width_mm)
 _NODE_RULES = [
-    ('"coverage_km2" >= 100 AND "peer_count" < 5',  "Critical", (215,  25,  28), 6.0, 0.4),
-    ('"coverage_km2" >= 100 AND "peer_count" >= 5', "Backbone", ( 44, 123, 182), 6.0, 0.4),
-    ('"coverage_km2" < 100  AND "peer_count" >= 5', "Redundant",(26,  150,  65), 3.5, 0.4),
-    ('"coverage_km2" < 100  AND "peer_count" < 5',  "Marginal", (136, 136, 136), 3.0, 0.3),
-    ('"coverage_km2" = 0',                          "No TIF",   (204, 204, 204), 2.5, 0.2),
+    ('"coverage_km2" >= 100 AND "peer_count" < 5',  "Critical", (215,  25,  28), 10.5, 0.4),
+    ('"coverage_km2" >= 100 AND "peer_count" >= 5', "Backbone", ( 44, 123, 182), 10.5, 0.4),
+    ('"coverage_km2" < 100  AND "peer_count" >= 5', "Redundant",(26,  150,  65), 10.5, 0.4),
+    ('"coverage_km2" < 100  AND "peer_count" < 5',  "Marginal", (136, 136, 136),  9.0, 0.3),
+    ('"coverage_km2" = 0',                          "No TIF",   (204, 204, 204),  7.5, 0.2),
 ]
 
 
 def apply_nodes_plus_symbology(layer) -> None:
     """5-class rule-based renderer — coverage × peer_count quadrant."""
+    import os
     from qgis.core import (
         QgsRuleBasedRenderer,
         QgsSymbol,
         QgsSimpleMarkerSymbolLayer,
+        QgsSvgMarkerSymbolLayer,
         QgsUnitTypes,
+        QgsProperty,
+        QgsSymbolLayer,
     )
 
+    _svg_path = os.path.join(os.path.dirname(__file__), "icons", "antenna.svg")
+
     root_rule = QgsRuleBasedRenderer.Rule(None)
+
+    reach_expr = (
+        'CASE WHEN "coverage_km2" > 0 '
+        'THEN 2 * sqrt("coverage_km2" / pi()) * 1000 '
+        'ELSE 2000 END'
+    )
 
     for expr, label, (r, g, b), size, stroke in _NODE_RULES:
         symbol = QgsSymbol.defaultSymbol(layer.geometryType())
         symbol.deleteSymbolLayer(0)
 
-        marker = QgsSimpleMarkerSymbolLayer()
-        marker.setColor(QColor(r, g, b, 255))
-        marker.setStrokeColor(QColor(255, 255, 255, 255))
-        marker.setStrokeWidth(stroke)
-        marker.setShape(QgsSimpleMarkerSymbolLayer.Circle)
-        marker.setSize(size)
-        marker.setSizeUnit(QgsUnitTypes.RenderMillimeters)
-        symbol.appendSymbolLayer(marker)
+        # Layer 0: reach circle (drawn first = behind the dot)
+        circle = QgsSimpleMarkerSymbolLayer()
+        circle.setColor(QColor(r, g, b, 128))
+        circle.setStrokeColor(QColor(r, g, b, 180))
+        circle.setStrokeWidth(0.15)
+        circle.setShape(QgsSimpleMarkerSymbolLayer.Circle)
+        circle.setSize(1)
+        circle.setSizeUnit(QgsUnitTypes.RenderMetersInMapUnits)
+        circle.setDataDefinedProperty(
+            QgsSymbolLayer.PropertySize,
+            QgsProperty.fromExpression(reach_expr),
+        )
+        symbol.appendSymbolLayer(circle)
+
+        # Layer 1: antenna SVG on top
+        svg = QgsSvgMarkerSymbolLayer(_svg_path)
+        svg.setSize(size)
+        svg.setSizeUnit(QgsUnitTypes.RenderMillimeters)
+        svg.setFillColor(QColor(r, g, b, 255))
+        svg.setStrokeColor(QColor(255, 255, 255, 255))
+        svg.setStrokeWidth(0.3)
+        symbol.appendSymbolLayer(svg)
 
         rule = QgsRuleBasedRenderer.Rule(symbol)
         rule.setFilterExpression(expr)
