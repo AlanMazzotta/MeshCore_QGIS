@@ -40,7 +40,11 @@ Each button runs a background task. Progress and errors appear in the log panel 
 Pulls the global MeshCore node registry from `map.meshcore.dev`, decodes the MessagePack payload, filters to `type=Repeater`, and saves `data/meshcore_nodes_all.geojson` to the project directory.
 
 ### 2. Download DEM
-Downloads a Copernicus GLO-30 DEM tile (30 m resolution) from OpenTopography for the bounding box of your QGIS canvas. Saves `data/dem.tif`, then spatially filters the node list to only those within the DEM extent, producing `data/meshcore_nodes.geojson`.
+**Before clicking this button, zoom and pan the QGIS map canvas to frame your study area.** The plugin uses the current canvas extent as the download bounding box — whatever is visible in the map window at the moment you click is what gets requested from OpenTopography.
+
+Downloads a Copernicus GLO-30 DEM tile (30 m resolution) from OpenTopography for that bounding box. Saves `data/dem.tif`, then spatially filters the node list to only those within the DEM extent, producing `data/meshcore_nodes.geojson`.
+
+> **Tip:** Load a basemap first (e.g. via the QuickMapServices plugin) so you can visually confirm your canvas covers the right area before downloading. A typical metro-area DEM downloads in under a minute.
 
 ### 3. Run Viewshed
 Computes a geometric line-of-sight viewshed for every repeater node using `gdal_viewshed` (observer height: 2 m above terrain). Individual TIFs are saved to `viewsheds/meshcore/` by node key hash. Existing TIFs are skipped on re-runs. After all individual viewsheds are computed, they are stacked via NumPy summation to produce `viewsheds/meshcore/cumulative_viewshed.tif` — a raster where each pixel value is the count of repeaters with line-of-sight to that location.
@@ -149,9 +153,11 @@ South and southwest are meaningfully underserved. This reflects the north-south 
 
 ## Replicating for Your Region
 
-1. Open QGIS, load a basemap, zoom to your region, save the project
-2. Enter your OpenTopography API key
-3. Run steps 1–5 in order
+1. Open QGIS and load a basemap (QuickMapServices or XYZ tile layer)
+2. **Zoom and pan the canvas to frame your study region** — this sets the DEM download extent
+3. Save the project (File → Save) — required before any plugin step will run
+4. Enter your OpenTopography API key in the dock panel
+5. Run steps 1–5 in order
 
 Runtime scales with `DEM pixel count × node count`. A smaller metro area with 50 nodes will complete in a few minutes. Node data is always pulled live from the public API — only the DEM extent changes between regions.
 
