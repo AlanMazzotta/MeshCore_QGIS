@@ -4,11 +4,16 @@ from qgis.core import QgsTask, QgsVectorLayer, QgsProject
 
 
 class EnrichTask(QgsTask):
-    def __init__(self, work_dir, log_fn):
+    def __init__(self, work_dir, log_fn, freq_mhz=910):
         super().__init__("MeshCore: Enrich Nodes", QgsTask.CanCancel)
         self.work_dir = work_dir
         self.log = log_fn
+        self.freq_mhz = freq_mhz
         self.error = None
+        # Unload any existing enriched layer now (main thread) so the
+        # GeoJSON file isn't locked when the background task writes it.
+        for lyr in QgsProject.instance().mapLayersByName("MeshCore Nodes (enriched)"):
+            QgsProject.instance().removeMapLayer(lyr.id())
 
     def run(self):
         from meshcore_viewshed.core import enrich_nodes
@@ -22,9 +27,10 @@ class EnrichTask(QgsTask):
                 cumulative_path=cumulative_path,
                 viewshed_dir=viewshed_dir,
                 output_path=out_path,
+                freq_mhz=self.freq_mhz,
             )
             return True
-        except BaseException as e:
+        except Exception as e:
             self.error = traceback.format_exc()
             return False
 

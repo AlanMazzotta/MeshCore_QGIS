@@ -18,6 +18,17 @@ For each node in meshcore_nodes.geojson, computes:
   coverage_km2    float  Approximate area covered by this node's viewshed
                          in square kilometres (pixel count * pixel area).
 
+  los_peer_count  int    Number of other repeater nodes directly visible in
+                         this node's individual viewshed TIF.
+
+  avg_peer_fspl   float  Average Free Space Path Loss (dB) to LoS peers.
+                         FSPL = 32.45 + 20·log10(freq_mhz) + 20·log10(d_km).
+                         Null if no LoS peers found.
+
+  min_peer_fspl   float  FSPL (dB) to the nearest LoS peer node.
+
+  max_peer_fspl   float  FSPL (dB) to the farthest LoS peer node.
+
 Outputs
 -------
   data/meshcore_nodes_plus.geojson
@@ -28,9 +39,12 @@ Usage (run with QGIS Python for osgeo):
 
 import argparse
 import json
+import logging
 import math
 import sys
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 import numpy as np
 
@@ -85,6 +99,22 @@ def pixel_area_km2(gt, lat):
     return dx_km * dy_km
 
 
+def haversine_km(lat1, lon1, lat2, lon2):
+    """Great-circle distance in km between two WGS84 points."""
+    R = 6371.0
+    dlat = math.radians(lat2 - lat1)
+    dlon = math.radians(lon2 - lon1)
+    a = (math.sin(dlat / 2) ** 2
+         + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2))
+         * math.sin(dlon / 2) ** 2)
+    return R * 2 * math.asin(math.sqrt(a))
+
+
+def fspl_db(d_km, freq_mhz):
+    """Free Space Path Loss in dB.  d_km > 0, freq_mhz > 0."""
+    return 32.45 + 20 * math.log10(freq_mhz) + 20 * math.log10(d_km)
+
+
 # ---------------------------------------------------------------------------
 # Raster sampling
 # ---------------------------------------------------------------------------
@@ -105,15 +135,23 @@ def sample_raster_at_point(ds, gt, lat, lon):
 # Per-node viewshed analysis
 # ---------------------------------------------------------------------------
 
-def analyse_individual_viewshed(tif_path, node_lat, node_lon, gt, lat_grid, lon_grid):
+def analyse_individual_viewshed(tif_path, node_lat, node_lon, gt, lat_grid, lon_grid,
+                                peer_nodes=None, freq_mhz=910):
     """
     Read one individual viewshed TIF and return:
-      (viewshed_pixels, dominant_dir_name, coverage_km2)
-    Returns (0, None, 0.0) if the TIF cannot be opened.
+      (viewshed_pixels, dominant_dir_name, coverage_km2,
+       los_peer_count, avg_peer_fspl, min_peer_fspl, max_peer_fspl)
+
+    peer_nodes : list of (lat, lon) for all other repeater nodes.
+                 When provided, each peer's pixel is sampled; visible peers
+                 get a pairwise FSPL computed.
+    freq_mhz   : transmit frequency for FSPL calculation (default 910).
+
+    Returns (0, None, 0.0, 0, None, None, None) if the TIF cannot be opened.
     """
     ds = gdal.Open(str(tif_path))
     if ds is None:
-        return 0, None, 0.0
+        return 0, None, 0.0, 0, None, None, None
 
     band = ds.GetRasterBand(1)
     nodata = band.GetNoDataValue()
@@ -127,7 +165,7 @@ def analyse_individual_viewshed(tif_path, node_lat, node_lon, gt, lat_grid, lon_
 
     n_visible = int(visible.sum())
     if n_visible == 0:
-        return 0, None, 0.0
+        return 0, None, 0.0, 0, None, None, None
 
     # Dominant direction: modal sector of bearings to visible pixels
     vis_lat = lat_grid[visible]
@@ -142,28 +180,45 @@ def analyse_individual_viewshed(tif_path, node_lat, node_lon, gt, lat_grid, lon_
     px_area = pixel_area_km2(gt, mean_lat)
     coverage_km2 = round(n_visible * px_area, 2)
 
-    return n_visible, dominant, coverage_km2
+    # Pairwise FSPL to LoS peer nodes
+    fspl_vals = []
+    if peer_nodes:
+        raster_rows, raster_cols = arr.shape
+        for peer_lat, peer_lon in peer_nodes:
+            p_row, p_col = latlon_to_pixel(gt, peer_lat, peer_lon)
+            if 0 <= p_row < raster_rows and 0 <= p_col < raster_cols:
+                if arr[p_row, p_col] > 0:
+                    d_km = haversine_km(node_lat, node_lon, peer_lat, peer_lon)
+                    if d_km > 0:
+                        fspl_vals.append(fspl_db(d_km, freq_mhz))
+
+    los_peer_count = len(fspl_vals)
+    avg_fspl = round(sum(fspl_vals) / los_peer_count, 1) if fspl_vals else None
+    min_fspl = round(min(fspl_vals), 1) if fspl_vals else None
+    max_fspl = round(max(fspl_vals), 1) if fspl_vals else None
+
+    return n_visible, dominant, coverage_km2, los_peer_count, avg_fspl, min_fspl, max_fspl
 
 
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
-def run(nodes_path, cumulative_path, viewshed_dir, output_path):
-    print(f"Loading nodes: {nodes_path}")
+def run(nodes_path, cumulative_path, viewshed_dir, output_path, freq_mhz=910):  # 910 MHz = US LoRa band
+    logger.info("Loading nodes: %s", nodes_path)
     with open(nodes_path) as f:
         geojson = json.load(f)
     features = geojson["features"]
-    print(f"  {len(features)} features")
+    logger.info("  %d features", len(features))
 
-    print(f"Opening cumulative viewshed: {cumulative_path}")
+    logger.info("Opening cumulative viewshed: %s", cumulative_path)
     cum_ds = gdal.Open(cumulative_path)
     if cum_ds is None:
         raise RuntimeError(f"Cannot open {cumulative_path}")
     cum_gt = cum_ds.GetGeoTransform()
     rows = cum_ds.RasterYSize
     cols = cum_ds.RasterXSize
-    print(f"  Raster: {cols} x {rows}")
+    logger.info("  Raster: %d x %d", cols, rows)
 
     # Build shared pixel grid (same extent for all individual TIFs)
     lat_grid, lon_grid = pixel_grid(cum_gt, rows, cols)
@@ -171,6 +226,12 @@ def run(nodes_path, cumulative_path, viewshed_dir, output_path):
     viewshed_dir = Path(viewshed_dir)
     out_features = []
     missing_tifs = 0
+
+    # Build list of (lat, lon) for all nodes — used for pairwise FSPL sampling
+    all_node_coords = [
+        (f["geometry"]["coordinates"][1], f["geometry"]["coordinates"][0])
+        for f in features
+    ]
 
     for i, feat in enumerate(features):
         node_id = feat["properties"].get("id", "")
@@ -180,28 +241,39 @@ def run(nodes_path, cumulative_path, viewshed_dir, output_path):
         # ---- peer_count: sample cumulative raster at node location ----
         peer_count = sample_raster_at_point(cum_ds, cum_gt, node_lat, node_lon)
         if peer_count is None:
-            peer_count = -1  # outside raster extent
+            peer_count = 0  # outside raster extent; treat as zero visible peers
+
+        # Peers = all nodes except self
+        peer_nodes = [c for j, c in enumerate(all_node_coords) if j != i]
 
         # ---- individual viewshed TIF ----
         tif_path = viewshed_dir / f"viewshed_{node_id}.tif"
         if tif_path.exists():
-            viewshed_pixels, dominant_dir, coverage_km2 = analyse_individual_viewshed(
-                tif_path, node_lat, node_lon, cum_gt, lat_grid, lon_grid
-            )
+            (viewshed_pixels, dominant_dir, coverage_km2,
+             los_peer_count, avg_peer_fspl, min_peer_fspl, max_peer_fspl) = \
+                analyse_individual_viewshed(
+                    tif_path, node_lat, node_lon, cum_gt, lat_grid, lon_grid,
+                    peer_nodes=peer_nodes, freq_mhz=freq_mhz,
+                )
         else:
             viewshed_pixels, dominant_dir, coverage_km2 = 0, None, 0.0
+            los_peer_count, avg_peer_fspl, min_peer_fspl, max_peer_fspl = 0, None, None, None
             missing_tifs += 1
 
         if i % 50 == 0:
             name = (feat['properties'].get('name') or '?')[:20]
             name_safe = name.encode('ascii', 'replace').decode('ascii')
-            print(f"  Node {i+1}/{len(features)}  {name_safe}")
+            logger.info("  Node %d/%d  %s", i + 1, len(features), name_safe)
 
         new_props = dict(feat["properties"])
         new_props["peer_count"]      = peer_count
         new_props["viewshed_pixels"] = viewshed_pixels
         new_props["dominant_dir"]    = dominant_dir
         new_props["coverage_km2"]    = coverage_km2
+        new_props["los_peer_count"]  = los_peer_count
+        new_props["avg_peer_fspl"]   = avg_peer_fspl
+        new_props["min_peer_fspl"]   = min_peer_fspl
+        new_props["max_peer_fspl"]   = max_peer_fspl
 
         out_features.append({
             "type": "Feature",
@@ -217,7 +289,11 @@ def run(nodes_path, cumulative_path, viewshed_dir, output_path):
         "metadata": {
             **geojson.get("metadata", {}),
             "enriched": True,
-            "attributes_added": ["peer_count", "viewshed_pixels", "dominant_dir", "coverage_km2"],
+            "freq_mhz": freq_mhz,
+            "attributes_added": [
+                "peer_count", "viewshed_pixels", "dominant_dir", "coverage_km2",
+                "los_peer_count", "avg_peer_fspl", "min_peer_fspl", "max_peer_fspl",
+            ],
         },
     }
 
@@ -225,12 +301,12 @@ def run(nodes_path, cumulative_path, viewshed_dir, output_path):
     with open(output_path, "w") as f:
         json.dump(out_geojson, f, indent=2)
 
-    print(f"\nSaved: {output_path}")
-    print(f"  Nodes enriched : {len(out_features)}")
-    print(f"  Missing TIFs   : {missing_tifs}")
+    logger.info("Saved: %s", output_path)
+    logger.info("  Nodes enriched : %d", len(out_features))
+    logger.info("  Missing TIFs   : %d", missing_tifs)
 
     # Summary stats
-    peer_vals = [f["properties"]["peer_count"] for f in out_features if f["properties"]["peer_count"] >= 0]
+    peer_vals = [f["properties"]["peer_count"] for f in out_features if f["properties"]["peer_count"] > 0]
     pix_vals  = [f["properties"]["viewshed_pixels"] for f in out_features if f["properties"]["viewshed_pixels"] > 0]
     dir_counts = {}
     for f in out_features:
@@ -239,17 +315,15 @@ def run(nodes_path, cumulative_path, viewshed_dir, output_path):
             dir_counts[d] = dir_counts.get(d, 0) + 1
 
     if peer_vals:
-        print(f"\n  peer_count   min={min(peer_vals)}  max={max(peer_vals)}  mean={sum(peer_vals)/len(peer_vals):.1f}")
+        logger.info("  peer_count   min=%d  max=%d  mean=%.1f",
+                    min(peer_vals), max(peer_vals), sum(peer_vals) / len(peer_vals))
     if pix_vals:
-        print(f"  viewshed_px  min={min(pix_vals):,}  max={max(pix_vals):,}  mean={sum(pix_vals)/len(pix_vals):,.0f}")
+        logger.info("  viewshed_px  min=%d  max=%d  mean=%.0f",
+                    min(pix_vals), max(pix_vals), sum(pix_vals) / len(pix_vals))
     if dir_counts:
-        print("\n  Dominant direction breakdown:")
-        for name in SECTOR_NAMES:
-            count = dir_counts.get(name, 0)
-            bar = "#" * (count * 30 // max(dir_counts.values()))
-            print(f"    {name:3s}  {count:3d}  {bar}")
+        logger.info("  Dominant direction breakdown: %s", dir_counts)
 
-    print("\nTo load in QGIS, paste into Script Editor (Ctrl+Alt+S):")
+    # QGIS snippet only printed when run as a standalone script (not as a task)
     _print_qgis_snippet(output_path)
 
 

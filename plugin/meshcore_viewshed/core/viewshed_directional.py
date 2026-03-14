@@ -28,10 +28,13 @@ Usage (run with QGIS Python for osgeo access):
 
 import argparse
 import json
+import logging
 import sys
 from pathlib import Path
 
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 try:
     from osgeo import gdal, osr
@@ -88,7 +91,7 @@ def bearing_to_sector(bearing, n_sectors):
 
 
 def run(viewshed_path: str, nodes_path: str, output_path: str, n_sectors: int):
-    print(f"Loading viewshed: {viewshed_path}")
+    logger.info("Loading viewshed: %s", viewshed_path)
     ds = gdal.Open(viewshed_path)
     if ds is None:
         raise RuntimeError(f"Cannot open {viewshed_path}")
@@ -98,7 +101,7 @@ def run(viewshed_path: str, nodes_path: str, output_path: str, n_sectors: int):
     gt = ds.GetGeoTransform()
     projection = ds.GetProjection()
     rows, cols = viewshed.shape
-    print(f"  Raster size: {cols} x {rows} pixels")
+    logger.info("  Raster size: %d x %d pixels", cols, rows)
 
     # Build pixel-centre coordinate grids
     col_idx, row_idx = np.meshgrid(np.arange(cols, dtype=np.float64),
@@ -114,10 +117,10 @@ def run(viewshed_path: str, nodes_path: str, output_path: str, n_sectors: int):
         visible = viewshed > 0
 
     n_visible = visible.sum()
-    print(f"  Visible pixels: {n_visible:,}")
+    logger.info("  Visible pixels: %d", n_visible)
 
     # Load repeater positions
-    print(f"Loading nodes: {nodes_path}")
+    logger.info("Loading nodes: %s", nodes_path)
     with open(nodes_path) as f:
         geojson = json.load(f)
 
@@ -127,7 +130,7 @@ def run(viewshed_path: str, nodes_path: str, output_path: str, n_sectors: int):
         if feat["properties"].get("type") == "Repeater"
         and feat["geometry"]["coordinates"][0] != 0.0
     ]
-    print(f"  Repeaters: {len(repeaters)}")
+    logger.info("  Repeaters: %d", len(repeaters))
 
     if not repeaters:
         raise RuntimeError("No Repeater nodes found in GeoJSON")
@@ -136,14 +139,14 @@ def run(viewshed_path: str, nodes_path: str, output_path: str, n_sectors: int):
     rpt_lons = np.array([r[1] for r in repeaters], dtype=np.float64)
 
     # Find nearest repeater for each pixel (memory-efficient: iterate over repeaters)
-    print("Computing nearest repeater per pixel...")
+    logger.info("Computing nearest repeater per pixel...")
     cos_lat = np.cos(np.radians(np.mean(rpt_lats)))
     min_dist2 = np.full((rows, cols), np.inf, dtype=np.float64)
     nearest_idx = np.zeros((rows, cols), dtype=np.int32)
 
     for i, (rlat, rlon) in enumerate(repeaters):
         if i % 50 == 0:
-            print(f"  Repeater {i+1}/{len(repeaters)}...")
+            logger.debug("  Repeater %d/%d...", i + 1, len(repeaters))
         dlat = px_lat - rlat
         dlon = (px_lon - rlon) * cos_lat
         d2 = dlat * dlat + dlon * dlon
@@ -152,7 +155,7 @@ def run(viewshed_path: str, nodes_path: str, output_path: str, n_sectors: int):
         nearest_idx[closer] = i
 
     # Compute bearing from nearest repeater to each pixel
-    print("Computing bearings...")
+    logger.info("Computing bearings...")
     n_lat = rpt_lats[nearest_idx]
     n_lon = rpt_lons[nearest_idx]
     bearing = bearing_degrees(n_lat, n_lon, px_lat, px_lon)
@@ -187,14 +190,13 @@ def run(viewshed_path: str, nodes_path: str, output_path: str, n_sectors: int):
     out_ds = None
     ds = None
 
-    print(f"\nDirectional viewshed written: {output_path}")
-    print("\nSector breakdown (visible pixels):")
+    logger.info("Directional viewshed written: %s", output_path)
     for i, label in enumerate(labels):
         count = int((sector == i + 1).sum())
         pct = 100 * count / n_visible if n_visible else 0
-        print(f"  {label:3s}  {count:>8,} px  ({pct:5.1f}%)")
+        logger.info("  %s  %d px  (%.1f%%)", label, count, pct)
 
-    print("\nTo style in QGIS, paste this into the Python Console (Ctrl+Alt+P):")
+    # QGIS snippet only printed when run as a standalone script (not as a task)
     _print_qgis_snippet(output_path, n_sectors)
 
 

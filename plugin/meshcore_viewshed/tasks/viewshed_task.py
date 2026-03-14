@@ -9,6 +9,11 @@ class ViewshedTask(QgsTask):
         self.work_dir = work_dir
         self.log = log_fn
         self.error = None
+        # Unload any existing coverage layer now (main thread) so GDAL can
+        # overwrite the TIF file without hitting a Windows file lock.
+        for name in ("MeshCore Coverage",):
+            for lyr in QgsProject.instance().mapLayersByName(name):
+                QgsProject.instance().removeMapLayer(lyr.id())
 
     def run(self):
         from meshcore_viewshed.core.viewshed_batch import BatchViewshedProcessor
@@ -26,7 +31,7 @@ class ViewshedTask(QgsTask):
             processor.process_all()
             self.setProgress(100)
             return True
-        except BaseException as e:
+        except Exception as e:
             self.error = traceback.format_exc()
             return False
 
