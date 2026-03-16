@@ -62,5 +62,7 @@ class ViewshedTask(QgsTask):
                 QgsProject.instance().addMapLayer(layer)
                 if is_raster:
                     from meshcore_viewshed.symbology import apply_coverage_symbology
+                    from qgis.utils import iface
                     apply_coverage_symbology(layer)
+                    iface.layerTreeView().refreshLayerSymbology(layer.id())
                 self.log(f"[Viewshed] Layer loaded: {name}")

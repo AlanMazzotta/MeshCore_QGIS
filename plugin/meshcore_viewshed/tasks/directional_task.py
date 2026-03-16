@@ -44,4 +44,8 @@ class DirectionalTask(QgsTask):
         layer = QgsRasterLayer(path, layer_name)
         if layer.isValid():
             QgsProject.instance().addMapLayer(layer)
+            from meshcore_viewshed.symbology import apply_directional_symbology
+            from qgis.utils import iface
+            apply_directional_symbology(layer)
+            iface.layerTreeView().refreshLayerSymbology(layer.id())
             self.log("[Directional] Layer loaded.")

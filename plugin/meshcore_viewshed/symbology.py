@@ -1,7 +1,9 @@
 """
 Auto-symbology applied when layers are loaded by the plugin.
 
-Coverage raster  — SinglebandPseudocolor, amber heat ramp, 50% opacity.
+Coverage raster  — 4-class discrete log-scale ramp, breaks derived from
+                   actual pixel distribution so any dataset is interpretable.
+DEM              — Interpolated terrain ramp, labeled in meters.
 Enriched nodes   — 5-class rule-based renderer matching Test_1_ASM.
 """
 
@@ -13,34 +15,165 @@ from qgis.PyQt.QtGui import QColor, QFont
 # ---------------------------------------------------------------------------
 
 def apply_coverage_symbology(layer) -> None:
-    """Amber heat ramp: transparent at 0, cream → burnt-orange at max."""
+    """
+    4-class discrete ramp with log-scale breaks derived from the actual pixel
+    distribution.  Log-scale handles the typical power-law falloff in
+    cumulative viewshed outputs — most pixels see few nodes, a dense core
+    sees many — keeping all four classes visually meaningful regardless of
+    the specific network or extent.
+    """
+    import numpy as np
+    from osgeo import gdal
     from qgis.core import (
         QgsSingleBandPseudoColorRenderer,
         QgsColorRampShader,
         QgsRasterShader,
-        QgsRasterBandStats,
     )
 
-    provider = layer.dataProvider()
-    stats = provider.bandStatistics(1, QgsRasterBandStats.Max, layer.extent(), 0)
-    max_val = max(int(stats.maximumValue), 2)
+    # --- read pixel data and compute log-scale class breaks ---
+    ds = gdal.Open(layer.source())
+    band = ds.GetRasterBand(1)
+    nodata = band.GetNoDataValue()
+    arr = band.ReadAsArray().astype(float)
+    ds = None
+
+    if nodata is not None:
+        arr[arr == nodata] = np.nan
+    arr[arr == 0] = np.nan
+    valid = arr[~np.isnan(arr)]
+
+    if len(valid) == 0:
+        return
+
+    log_vals = np.log1p(valid)
+    raw_breaks = np.expm1(np.percentile(log_vals, [0, 25, 50, 75, 100])).astype(int)
+    breaks = list(dict.fromkeys(raw_breaks))  # deduplicate while preserving order
+
+    # --- amber-to-rust palette (pale → dense) ---
+    _COLORS = [
+        QColor(255, 247, 188, 200),  # pale yellow  — fringe
+        QColor(254, 196,  79, 220),  # amber        — low redundancy
+        QColor(217,  95,  14, 235),  # burnt orange — moderate
+        QColor(153,  52,   4, 255),  # deep rust    — dense core
+    ]
+
+    items = [QgsColorRampShader.ColorRampItem(0, QColor(0, 0, 0, 0), "No coverage")]
+    n = len(breaks) - 1
+    for i in range(n):
+        lo, hi = int(breaks[i]), int(breaks[i + 1])
+        label = f"{lo}+ nodes visible" if i == n - 1 else f"{lo}–{hi} nodes visible"
+        items.append(QgsColorRampShader.ColorRampItem(hi, _COLORS[min(i, 3)], label))
 
     fcn = QgsColorRampShader()
-    fcn.setColorRampType(QgsColorRampShader.Interpolated)
-    fcn.setClassificationMode(QgsColorRampShader.Continuous)
-    fcn.setColorRampItemList([
-        QgsColorRampShader.ColorRampItem(0,       QColor(0,   0,   0,   0),   "No coverage"),
-        QgsColorRampShader.ColorRampItem(1,       QColor(255, 247, 188, 200), "1 node"),
-        QgsColorRampShader.ColorRampItem(max_val, QColor(217,  95,  14, 255), f"{max_val} nodes"),
-    ])
+    fcn.setColorRampType(QgsColorRampShader.Discrete)
+    fcn.setColorRampItemList(items)
 
     shader = QgsRasterShader()
     shader.setRasterShaderFunction(fcn)
 
-    renderer = QgsSingleBandPseudoColorRenderer(provider, 1, shader)
+    renderer = QgsSingleBandPseudoColorRenderer(layer.dataProvider(), 1, shader)
+    layer.setRenderer(renderer)
+    layer.setOpacity(0.6)
+    layer.triggerRepaint()
+    layer.emitStyleChanged()
+
+
+# ---------------------------------------------------------------------------
+# DEM (dem.tif)
+# ---------------------------------------------------------------------------
+
+def apply_dem_symbology(layer) -> None:
+    """
+    Interpolated terrain ramp from actual min to max elevation, labeled in
+    metres.  Five stops from lowland green through alpine white give users
+    immediate terrain context without any manual configuration.
+    """
+    try:
+        from qgis.core import (
+            QgsSingleBandPseudoColorRenderer,
+            QgsColorRampShader,
+            QgsRasterShader,
+            QgsRasterBandStats,
+            QgsMessageLog,
+            Qgis,
+        )
+
+        provider = layer.dataProvider()
+        # QgsRasterBandStats.All is safe across all QGIS 3.x versions
+        stats = provider.bandStatistics(1, QgsRasterBandStats.All)
+        lo = int(stats.minimumValue)
+        hi = int(stats.maximumValue)
+        span = hi - lo or 1  # guard against flat rasters
+        QgsMessageLog.logMessage(
+            f"[DEM symbology] min={lo} max={hi}", "MeshCore", Qgis.Info
+        )
+
+        # lowland green → mid yellow-brown → alpine white
+        items = [
+            QgsColorRampShader.ColorRampItem(lo,               QColor( 70, 150,  70), f"{lo} m"),
+            QgsColorRampShader.ColorRampItem(lo + span * 0.25, QColor(140, 190,  80), ""),
+            QgsColorRampShader.ColorRampItem(lo + span * 0.50, QColor(210, 185, 120), ""),
+            QgsColorRampShader.ColorRampItem(lo + span * 0.75, QColor(180, 130,  80), ""),
+            QgsColorRampShader.ColorRampItem(hi,               QColor(240, 240, 240), f"{hi} m"),
+        ]
+
+        fcn = QgsColorRampShader(lo, hi)
+        fcn.setColorRampType(QgsColorRampShader.Interpolated)
+        fcn.setColorRampItemList(items)
+
+        shader = QgsRasterShader(lo, hi)
+        shader.setRasterShaderFunction(fcn)
+
+        renderer = QgsSingleBandPseudoColorRenderer(provider, 1, shader)
+        renderer.setClassificationMin(lo)
+        renderer.setClassificationMax(hi)
+        layer.setRenderer(renderer)
+        layer.setOpacity(0.7)
+        layer.triggerRepaint()
+        layer.emitStyleChanged()
+
+    except Exception as e:
+        from qgis.core import QgsMessageLog, Qgis
+        QgsMessageLog.logMessage(
+            f"[DEM symbology] Failed: {e}", "MeshCore", Qgis.Warning
+        )
+
+
+# ---------------------------------------------------------------------------
+# Directional raster (directional_viewshed.tif)
+# ---------------------------------------------------------------------------
+
+def apply_directional_symbology(layer) -> None:
+    """
+    Paletted renderer for the 8-sector directional viewshed.  Only classes
+    1–8 are registered, so the QGIS legend shows nothing beyond NW — the
+    raster is a uint8 with a 256-entry palette table baked in by GDAL, and
+    without an explicit class list QGIS would display all 256 entries.
+    Colors mirror the sector palette defined in viewshed_directional.py.
+    """
+    from qgis.core import QgsPalettedRasterRenderer
+
+    _SECTORS = [
+        (1, ( 30, 100, 200), "N"),
+        (2, (  0, 180, 180), "NE"),
+        (3, ( 50, 180,  50), "E"),
+        (4, (180, 220,   0), "SE"),
+        (5, (220, 130,   0), "S"),
+        (6, (220,  50,   0), "SW"),
+        (7, (160,   0, 200), "W"),
+        (8, ( 80,  30, 180), "NW"),
+    ]
+
+    classes = [
+        QgsPalettedRasterRenderer.Class(val, QColor(r, g, b), label)
+        for val, (r, g, b), label in _SECTORS
+    ]
+
+    renderer = QgsPalettedRasterRenderer(layer.dataProvider(), 1, classes)
     layer.setRenderer(renderer)
     layer.setOpacity(0.5)
     layer.triggerRepaint()
+    layer.emitStyleChanged()
 
 
 # ---------------------------------------------------------------------------

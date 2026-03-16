@@ -49,12 +49,16 @@ class DemTask(QgsTask):
         path = os.path.join(self.work_dir, "data", "dem.tif")
         if not os.path.exists(path):
             return
-        layer_name = "DEM"
+        layer_name = "Elevation (m)"
         for lyr in QgsProject.instance().mapLayersByName(layer_name):
             QgsProject.instance().removeMapLayer(lyr.id())
         layer = QgsRasterLayer(path, layer_name)
         if layer.isValid():
             QgsProject.instance().addMapLayer(layer)
+            from meshcore_viewshed.symbology import apply_dem_symbology
+            from qgis.utils import iface
+            apply_dem_symbology(layer)
+            iface.layerTreeView().refreshLayerSymbology(layer.id())
             self.log("[DEM] Layer loaded.")
         else:
             self.log("[DEM] Layer invalid.")

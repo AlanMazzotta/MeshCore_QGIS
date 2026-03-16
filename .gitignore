@@ -41,6 +41,9 @@ project/
 .env
 .env.local
 
+# Script outputs — generated at runtime, never commit
+scripts/coverage_breaks.json
+
 # Pipeline outputs — generated at runtime, never commit
 *.tif
 *.geotiff

@@ -2,7 +2,7 @@ import os
 from qgis.PyQt.QtWidgets import (
     QDockWidget, QWidget, QVBoxLayout, QHBoxLayout,
     QPushButton, QLineEdit, QLabel, QProgressBar,
-    QTextEdit, QGroupBox, QSizePolicy
+    QTextEdit, QGroupBox, QSizePolicy, QCheckBox
 )
 from qgis.PyQt.QtCore import Qt
 from qgis.core import QgsApplication, QgsProject, QgsSettings
@@ -11,6 +11,10 @@ from qgis.core import QgsApplication, QgsProject, QgsSettings
 class MeshCoreViewshedDock(QDockWidget):
     default_area = Qt.RightDockWidgetArea
     _SETTINGS_KEY = "meshcore_viewshed/opentopo_api_key"
+    _BASEMAP_KEY  = "meshcore_viewshed/add_basemap"
+    _BASEMAP_URL  = ("type=xyz&url=https://basemaps.cartocdn.com/"
+                     "dark_all/{z}/{x}/{y}.png&zmax=19&zmin=0")
+    _BASEMAP_NAME = "Basemap (CartoDB Dark)"
 
     def __init__(self, iface, parent=None):
         super().__init__("MeshCore Viewshed", parent)
@@ -60,6 +64,16 @@ class MeshCoreViewshedDock(QDockWidget):
             steps_layout.addWidget(btn)
 
         layout.addWidget(steps_group)
+
+        # --- Options ---
+        self.chk_basemap = QCheckBox("Add dark basemap (CartoDB)")
+        self.chk_basemap.setChecked(
+            QgsSettings().value(self._BASEMAP_KEY, True, type=bool)
+        )
+        self.chk_basemap.stateChanged.connect(
+            lambda state: QgsSettings().setValue(self._BASEMAP_KEY, bool(state))
+        )
+        layout.addWidget(self.chk_basemap)
 
         # --- Run All ---
         self.btn_run_all = QPushButton("Run All")
@@ -141,6 +155,27 @@ class MeshCoreViewshedDock(QDockWidget):
         self.bbox_label.setStyleSheet("color: white; font-size: 10px;")
         self.log_msg(f"[Region] Canvas extent captured: {self._bbox}")
 
+    def _add_basemap(self):
+        """Add CartoDB Dark Matter basemap if the checkbox is checked.
+
+        Skips silently if a layer with the same name already exists, so
+        re-running the plugin never duplicates the basemap.  The layer is
+        moved to the bottom of the layer tree so it sits behind all outputs.
+        """
+        if not self.chk_basemap.isChecked():
+            return
+        if QgsProject.instance().mapLayersByName(self._BASEMAP_NAME):
+            return  # already present
+        from qgis.core import QgsRasterLayer
+        layer = QgsRasterLayer(self._BASEMAP_URL, self._BASEMAP_NAME, "wms")
+        if not layer.isValid():
+            self.log_msg("[Basemap] Failed to load CartoDB Dark layer.")
+            return
+        QgsProject.instance().addMapLayer(layer, False)  # False = don't add to tree yet
+        root = QgsProject.instance().layerTreeRoot()
+        root.insertLayer(-1, layer)  # -1 = bottom of stack
+        self.log_msg("[Basemap] CartoDB Dark added.")
+
     def _set_buttons_enabled(self, enabled):
         for btn in (self.btn_fetch, self.btn_dem, self.btn_viewshed,
                     self.btn_directional, self.btn_enrich, self.btn_run_all):
@@ -171,6 +206,7 @@ class MeshCoreViewshedDock(QDockWidget):
         work_dir = self._work_dir()
         if not work_dir:
             return
+        self._add_basemap()
         from .tasks.fetch_task import FetchTask
         self._on_task_started("Fetch Nodes")
         task = FetchTask(work_dir, self.log_msg)
