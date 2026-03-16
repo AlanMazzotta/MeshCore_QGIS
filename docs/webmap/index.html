@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Portland MeshCore Network: Terrain-Aware Coverage Analysis</title>
+
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: Arial, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+    }
+
+    #header {
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      z-index: 1000;
+      background: rgba(15, 15, 30, 0.88);
+      padding: 10px 16px;
+      border-bottom: 1px solid #333;
+    }
+
+    #header h1 {
+      font-size: 15px;
+      font-weight: bold;
+      color: #ffffff;
+      letter-spacing: 0.02em;
+    }
+
+    #header p {
+      font-size: 11px;
+      color: #aaa;
+      margin-top: 2px;
+    }
+
+    #map {
+      position: absolute;
+      top: 52px; bottom: 0; left: 0; right: 0;
+    }
+
+    /* Legend */
+    .legend {
+      background: rgba(15, 15, 30, 0.88);
+      border: 1px solid #444;
+      border-radius: 4px;
+      padding: 10px 12px;
+      font-size: 11px;
+      line-height: 1.6;
+      min-width: 160px;
+    }
+
+    .legend h4 {
+      font-size: 11px;
+      font-weight: bold;
+      color: #ccc;
+      margin-bottom: 5px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .legend-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      margin-bottom: 3px;
+    }
+
+    .legend-swatch {
+      width: 14px;
+      height: 14px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    .legend-swatch.circle {
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.4);
+    }
+
+    .legend-divider {
+      border: none;
+      border-top: 1px solid #444;
+      margin: 7px 0;
+    }
+
+    /* Layer control override for dark theme */
+    .leaflet-control-layers {
+      background: rgba(15, 15, 30, 0.88) !important;
+      border: 1px solid #444 !important;
+      color: #ddd !important;
+    }
+
+    .leaflet-control-layers label {
+      color: #ddd !important;
+    }
+
+    .leaflet-control-layers-separator {
+      border-color: #444 !important;
+    }
+
+    /* Popup styling */
+    .leaflet-popup-content-wrapper {
+      background: rgba(15, 15, 30, 0.95);
+      border: 1px solid #555;
+      border-radius: 4px;
+      color: #e0e0e0;
+    }
+
+    .leaflet-popup-tip {
+      background: rgba(15, 15, 30, 0.95);
+    }
+
+    .leaflet-popup-content {
+      margin: 10px 14px;
+      font-size: 12px;
+      line-height: 1.7;
+    }
+
+    .popup-name {
+      font-size: 13px;
+      font-weight: bold;
+      color: #fff;
+      margin-bottom: 4px;
+    }
+
+    .popup-class {
+      display: inline-block;
+      padding: 1px 7px;
+      border-radius: 10px;
+      font-size: 10px;
+      font-weight: bold;
+      margin-bottom: 6px;
+      color: #fff;
+    }
+
+    .popup-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .popup-label { color: #999; }
+    .popup-value { color: #fff; font-weight: bold; }
+
+    .leaflet-control-zoom a,
+    .leaflet-control-attribution {
+      background: rgba(15, 15, 30, 0.88) !important;
+      color: #aaa !important;
+    }
+
+    .leaflet-control-attribution a { color: #888 !important; }
+  </style>
+</head>
+<body>
+
+<div id="header">
+  <h1>Portland MeshCore Network: Terrain-Aware Coverage Analysis</h1>
+  <p>Geometric line-of-sight viewshed per repeater node &mdash; Copernicus GLO-30 DEM, 30 m resolution &mdash; <a href="https://github.com/alanmazzotta/MeshCore_QGIS" style="color:#888">Plugin source</a></p>
+</div>
+
+<div id="map"></div>
+
+<script>
+// ---------------------------------------------------------------------------
+// Map init
+// ---------------------------------------------------------------------------
+const map = L.map('map', {
+  center: [45.52, -122.68],
+  zoom: 11,
+  zoomControl: true,
+});
+
+// ---------------------------------------------------------------------------
+// Basemap
+// ---------------------------------------------------------------------------
+L.tileLayer('https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
+  attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+  maxZoom: 19,
+}).addTo(map);
+
+// ---------------------------------------------------------------------------
+// Coverage raster tiles
+// ---------------------------------------------------------------------------
+const coverageLayer = L.tileLayer('tiles/coverage/{z}/{x}/{y}.png', {
+  minZoom: 9,
+  maxZoom: 19,
+  maxNativeZoom: 14,
+  opacity: 0.75,
+  attribution: 'Coverage: MeshCore Viewshed Plugin',
+}).addTo(map);
+
+// ---------------------------------------------------------------------------
+// Directional raster tiles
+// ---------------------------------------------------------------------------
+const directionLayer = L.tileLayer('tiles/direction/{z}/{x}/{y}.png', {
+  minZoom: 9,
+  maxZoom: 19,
+  maxNativeZoom: 14,
+  opacity: 0.6,
+});
+
+// ---------------------------------------------------------------------------
+// Node classification helpers
+// ---------------------------------------------------------------------------
+const CLASS_COLORS = {
+  'Critical':  '#D7191C',
+  'Backbone':  '#2C7BB6',
+  'Redundant': '#1A9641',
+  'Marginal':  '#888888',
+  'No TIF':    '#CCCCCC',
+};
+
+function classifyNode(p) {
+  if (!p.coverage_km2 || p.coverage_km2 === 0) return 'No TIF';
+  const highCoverage = p.coverage_km2 >= 100;
+  const wellConnected = p.peer_count >= 3;
+  if (highCoverage && !wellConnected) return 'Critical';
+  if (highCoverage &&  wellConnected) return 'Backbone';
+  if (!highCoverage && wellConnected) return 'Redundant';
+  return 'Marginal';
+}
+
+function nodeMarker(p) {
+  const cls = classifyNode(p);
+  const color = CLASS_COLORS[cls];
+  return L.circleMarker([0, 0], {
+    radius: cls === 'No TIF' ? 4 : 6,
+    fillColor: color,
+    fillOpacity: cls === 'No TIF' ? 0.5 : 0.85,
+    color: '#ffffff',
+    weight: 1.2,
+  });
+}
+
+function popupHTML(p) {
+  const cls = classifyNode(p);
+  const color = CLASS_COLORS[cls];
+  const coverage = p.coverage_km2 > 0 ? p.coverage_km2.toFixed(1) + ' km²' : 'None';
+  const dir = p.dominant_dir || '—';
+  return `
+    <div class="popup-name">${p.name || 'Unnamed'}</div>
+    <span class="popup-class" style="background:${color}">${cls}</span>
+    <div class="popup-row"><span class="popup-label">Type</span><span class="popup-value">${p.type || '—'}</span></div>
+    <div class="popup-row"><span class="popup-label">Coverage</span><span class="popup-value">${coverage}</span></div>
+    <div class="popup-row"><span class="popup-label">Peers (LOS)</span><span class="popup-value">${p.peer_count ?? '—'}</span></div>
+    <div class="popup-row"><span class="popup-label">Dominant direction</span><span class="popup-value">${dir}</span></div>
+  `;
+}
+
+// ---------------------------------------------------------------------------
+// Load nodes GeoJSON
+// ---------------------------------------------------------------------------
+fetch('nodes.geojson')
+  .then(r => r.json())
+  .then(data => {
+    const nodesLayer = L.geoJSON(data, {
+      pointToLayer: (feature, latlng) => {
+        const m = nodeMarker(feature.properties);
+        m.setLatLng(latlng);
+        return m;
+      },
+      onEachFeature: (feature, layer) => {
+        layer.bindPopup(popupHTML(feature.properties), { maxWidth: 260 });
+      },
+    }).addTo(map);
+
+    // Layer control — add after nodes are loaded so it includes them
+    L.control.layers(
+      {},
+      {
+        'Coverage (nodes visible)': coverageLayer,
+        'Dominant direction':       directionLayer,
+        'Repeater nodes':           nodesLayer,
+      },
+      { collapsed: false, position: 'topright' }
+    ).addTo(map);
+  });
+
+// ---------------------------------------------------------------------------
+// Legend
+// ---------------------------------------------------------------------------
+const legend = L.control({ position: 'bottomleft' });
+legend.onAdd = () => {
+  const div = L.DomUtil.create('div', 'legend');
+  div.innerHTML = `
+    <h4>Coverage (nodes visible)</h4>
+    <div class="legend-row"><div class="legend-swatch" style="background:#FFF7BC"></div><span>1–3</span></div>
+    <div class="legend-row"><div class="legend-swatch" style="background:#FEC44F"></div><span>3–6</span></div>
+    <div class="legend-row"><div class="legend-swatch" style="background:#D95F0E"></div><span>6–16</span></div>
+    <div class="legend-row"><div class="legend-swatch" style="background:#993304"></div><span>16+</span></div>
+    <hr class="legend-divider">
+    <h4>Node class</h4>
+    <div class="legend-row"><div class="legend-swatch circle" style="background:#D7191C"></div><span>Critical</span></div>
+    <div class="legend-row"><div class="legend-swatch circle" style="background:#2C7BB6"></div><span>Backbone</span></div>
+    <div class="legend-row"><div class="legend-swatch circle" style="background:#1A9641"></div><span>Redundant</span></div>
+    <div class="legend-row"><div class="legend-swatch circle" style="background:#888888"></div><span>Marginal</span></div>
+    <div class="legend-row"><div class="legend-swatch circle" style="background:#CCCCCC"></div><span>No TIF</span></div>
+    <hr class="legend-divider">
+    <h4>Dominant direction</h4>
+    <div class="legend-row"><div class="legend-swatch" style="background:#1E64C8"></div><span>N</span></div>
+    <div class="legend-row"><div class="legend-swatch" style="background:#00B4B4"></div><span>NE</span></div>
+    <div class="legend-row"><div class="legend-swatch" style="background:#32B432"></div><span>E</span></div>
+    <div class="legend-row"><div class="legend-swatch" style="background:#B4DC00"></div><span>SE</span></div>
+    <div class="legend-row"><div class="legend-swatch" style="background:#DC8200"></div><span>S</span></div>
+    <div class="legend-row"><div class="legend-swatch" style="background:#DC3200"></div><span>SW</span></div>
+    <div class="legend-row"><div class="legend-swatch" style="background:#A000C8"></div><span>W</span></div>
+    <div class="legend-row"><div class="legend-swatch" style="background:#501EB4"></div><span>NW</span></div>
+  `;
+  return div;
+};
+legend.addTo(map);
+</script>
+</body>
+</html>
