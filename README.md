@@ -2,6 +2,8 @@
 
 A self-contained QGIS plugin for terrain-aware coverage analysis of [MeshCore](https://meshcore.co.uk) repeater networks. Pulls live node data from the public MeshCore map API, downloads a digital elevation model, computes per-node viewsheds, and produces coverage rasters and an enriched node dataset — all from a single dock panel inside QGIS.
 
+**[Live example: Portland MeshCore Network](https://alanmazzotta.github.io/MeshCore_QGIS/)**
+
 ---
 
 ## Prerequisites
