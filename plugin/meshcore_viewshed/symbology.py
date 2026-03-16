@@ -181,11 +181,14 @@ def apply_directional_symbology(layer) -> None:
 # ---------------------------------------------------------------------------
 
 # (filter_expr, label, (R, G, B), size_mm, stroke_width_mm)
+# Peer count threshold = 3: a node with 3+ peers has genuine redundant routing
+# paths, which is the fundamental mesh property. Nodes with 0-2 peers are
+# effectively leaf nodes or spurs regardless of their coverage reach.
 _NODE_RULES = [
-    ('"coverage_km2" >= 100 AND "peer_count" < 5',  "Critical", (215,  25,  28), 10.5, 0.4),
-    ('"coverage_km2" >= 100 AND "peer_count" >= 5', "Backbone", ( 44, 123, 182), 10.5, 0.4),
-    ('"coverage_km2" < 100  AND "peer_count" >= 5', "Redundant",(26,  150,  65), 10.5, 0.4),
-    ('"coverage_km2" < 100  AND "peer_count" < 5',  "Marginal", (136, 136, 136),  9.0, 0.3),
+    ('"coverage_km2" >= 100 AND "peer_count" < 3',  "Critical", (215,  25,  28), 10.5, 0.4),
+    ('"coverage_km2" >= 100 AND "peer_count" >= 3', "Backbone", ( 44, 123, 182), 10.5, 0.4),
+    ('"coverage_km2" < 100  AND "peer_count" >= 3', "Redundant",(26,  150,  65), 10.5, 0.4),
+    ('"coverage_km2" < 100  AND "peer_count" < 3',  "Marginal", (136, 136, 136),  9.0, 0.3),
     ('"coverage_km2" = 0',                          "No TIF",   (204, 204, 204),  7.5, 0.2),
 ]
 
@@ -219,9 +222,9 @@ def apply_nodes_plus_symbology(layer) -> None:
 
         # Layer 0: reach circle (drawn first = behind the dot)
         circle = QgsSimpleMarkerSymbolLayer()
-        circle.setColor(QColor(r, g, b, 128))
-        circle.setStrokeColor(QColor(r, g, b, 180))
-        circle.setStrokeWidth(0.15)
+        circle.setColor(QColor(r, g, b, 77))             # 30% opacity fill
+        circle.setStrokeColor(QColor(153, 153, 153, 128)) # 60% grey, 50% opacity
+        circle.setStrokeWidth(0.4)
         circle.setShape(QgsSimpleMarkerSymbolLayer.Circle)
         circle.setSize(1)
         circle.setSizeUnit(QgsUnitTypes.RenderMetersInMapUnits)
@@ -231,13 +234,13 @@ def apply_nodes_plus_symbology(layer) -> None:
         )
         symbol.appendSymbolLayer(circle)
 
-        # Layer 1: antenna SVG on top
+        # Layer 1: antenna SVG on top (full opacity, independent of circle)
         svg = QgsSvgMarkerSymbolLayer(_svg_path)
         svg.setSize(size)
         svg.setSizeUnit(QgsUnitTypes.RenderMillimeters)
         svg.setFillColor(QColor(r, g, b, 255))
         svg.setStrokeColor(QColor(255, 255, 255, 255))
-        svg.setStrokeWidth(0.3)
+        svg.setStrokeWidth(0.8)
         symbol.appendSymbolLayer(svg)
 
         rule = QgsRuleBasedRenderer.Rule(symbol)

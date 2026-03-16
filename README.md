@@ -82,14 +82,14 @@ Each node renders as two stacked symbol layers:
 
 #### Node Classification
 
-Nodes are classified by intersecting `coverage_km2` and `peer_count` at threshold values (100 km², 5 peers):
+Nodes are classified by intersecting `coverage_km2` and `peer_count` at threshold values (100 km², 3 peers).  The peer count threshold of 3 is chosen because a node with 3+ line-of-sight peers has genuine redundant routing paths — the fundamental property of a mesh network.  Nodes with 0–2 peers are effectively leaf nodes or spurs regardless of their coverage reach, and their failure removes coverage with no alternate path.
 
 | Class | Colour | Criteria | Meaning |
 |---|---|---|---|
-| **Critical** | Red | coverage ≥ 100 km², peers < 5 | High reach, few redundant paths — single point of failure |
-| **Backbone** | Blue | coverage ≥ 100 km², peers ≥ 5 | High reach, well connected — structural core of the network |
-| **Redundant** | Green | coverage < 100 km², peers ≥ 5 | Locally over-served, limited unique coverage |
-| **Marginal** | Grey | coverage < 100 km², peers < 5 | Peripheral, limited reach and connectivity |
+| **Critical** | Red | coverage ≥ 100 km², peers < 3 | High reach, no redundant paths — single point of failure |
+| **Backbone** | Blue | coverage ≥ 100 km², peers ≥ 3 | High reach, well connected — structural core of the network |
+| **Redundant** | Green | coverage < 100 km², peers ≥ 3 | Locally over-served, limited unique coverage |
+| **Marginal** | Grey | coverage < 100 km², peers < 3 | Peripheral, limited reach and connectivity |
 | **No TIF** | Light grey | coverage = 0 | Viewshed not computed or no visible pixels |
 
 Node name labels are displayed in 7 pt white text with a black halo.
