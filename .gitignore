@@ -51,6 +51,10 @@ data/*.geojson
 data/*.tif
 data/*.dem
 viewsheds/
+*.ndjson
+
+# Archived docs — not for public repo
+README_v1_archive.md
 
 # OS
 .DS_Store

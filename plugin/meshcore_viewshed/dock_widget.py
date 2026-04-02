@@ -10,8 +10,9 @@ from qgis.core import QgsApplication, QgsProject, QgsSettings
 
 class MeshCoreViewshedDock(QDockWidget):
     default_area = Qt.RightDockWidgetArea
-    _SETTINGS_KEY = "meshcore_viewshed/opentopo_api_key"
-    _BASEMAP_KEY  = "meshcore_viewshed/add_basemap"
+    _SETTINGS_KEY    = "meshcore_viewshed/opentopo_api_key"
+    _BASEMAP_KEY     = "meshcore_viewshed/add_basemap"
+    _PACKETS_PATH_KEY = "meshcore_viewshed/packets_path"
     _BASEMAP_URL  = ("type=xyz&url=https://basemaps.cartocdn.com/"
                      "dark_all/{z}/{x}/{y}.png&zmax=19&zmin=0")
     _BASEMAP_NAME = "Basemap (CartoDB Dark)"
@@ -98,6 +99,24 @@ class MeshCoreViewshedDock(QDockWidget):
         self.log.setStyleSheet("font-size: 10px; font-family: monospace;")
         layout.addWidget(self.log)
 
+        # --- Signal Quality (POC) ---
+        snr_group = QGroupBox("Signal Quality (POC)")
+        snr_layout = QVBoxLayout(snr_group)
+
+        snr_layout.addWidget(QLabel("Packets file (NDJSON):"))
+        self.packets_path_edit = QLineEdit()
+        self.packets_path_edit.setPlaceholderText(
+            "e.g. C:/…/meshcore-packet-capture/data/packets.ndjson"
+        )
+        self.packets_path_edit.setText(
+            QgsSettings().value(self._PACKETS_PATH_KEY, "")
+        )
+        snr_layout.addWidget(self.packets_path_edit)
+
+        self.btn_snr = QPushButton("Generate SNR Heatmap")
+        snr_layout.addWidget(self.btn_snr)
+        layout.addWidget(snr_group)
+
         layout.addStretch()
         self.setWidget(container)
 
@@ -108,6 +127,7 @@ class MeshCoreViewshedDock(QDockWidget):
         self.btn_directional.clicked.connect(self._run_directional)
         self.btn_enrich.clicked.connect(self._run_enrich)
         self.btn_run_all.clicked.connect(self._run_all)
+        self.btn_snr.clicked.connect(self._run_snr_heatmap)
 
         self._bbox = None  # (west, south, east, north) in WGS84
 
@@ -178,7 +198,8 @@ class MeshCoreViewshedDock(QDockWidget):
 
     def _set_buttons_enabled(self, enabled):
         for btn in (self.btn_fetch, self.btn_dem, self.btn_viewshed,
-                    self.btn_directional, self.btn_enrich, self.btn_run_all):
+                    self.btn_directional, self.btn_enrich, self.btn_run_all,
+                    self.btn_snr):
             btn.setEnabled(enabled)
 
     def _on_task_started(self, label):
@@ -264,6 +285,24 @@ class MeshCoreViewshedDock(QDockWidget):
         task = EnrichTask(work_dir, self.log_msg)
         task.taskCompleted.connect(lambda: self._on_task_done("Enrich Nodes", True))
         task.taskTerminated.connect(lambda t=task: self._on_task_done("Enrich Nodes", False, t.error or "task terminated"))
+        QgsApplication.taskManager().addTask(task)
+
+    def _run_snr_heatmap(self):
+        packets_path = self.packets_path_edit.text().strip()
+        if not packets_path:
+            self.log_msg("[Error] Set the packets file path first.")
+            return
+        QgsSettings().setValue(self._PACKETS_PATH_KEY, packets_path)
+        work_dir = self._work_dir()
+        if not work_dir:
+            return
+        from .tasks.snr_heatmap_task import SnrHeatmapTask
+        self._on_task_started("SNR Heatmap")
+        task = SnrHeatmapTask(work_dir, packets_path, self.log_msg)
+        task.taskCompleted.connect(lambda: self._on_task_done("SNR Heatmap", True))
+        task.taskTerminated.connect(
+            lambda t=task: self._on_task_done("SNR Heatmap", False, t.error or "task terminated")
+        )
         QgsApplication.taskManager().addTask(task)
 
     def _run_all(self):

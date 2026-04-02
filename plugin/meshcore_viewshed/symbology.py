@@ -5,6 +5,7 @@ Coverage raster  — 4-class discrete log-scale ramp, breaks derived from
                    actual pixel distribution so any dataset is interpretable.
 DEM              — Interpolated terrain ramp, labeled in meters.
 Enriched nodes   — 5-class rule-based renderer matching Test_1_ASM.
+SNR heatmap      — Continuous Inferno ramp, dynamic range from raster stats.
 """
 
 from qgis.PyQt.QtGui import QColor, QFont
@@ -251,6 +252,74 @@ def apply_nodes_plus_symbology(layer) -> None:
     layer.setRenderer(QgsRuleBasedRenderer(root_rule))
     _apply_nodes_plus_labels(layer)
     layer.triggerRepaint()
+
+
+# ---------------------------------------------------------------------------
+# SNR heatmap (meshcore_snr_heatmap.tif)
+# ---------------------------------------------------------------------------
+
+def apply_snr_heatmap_symbology(layer) -> None:
+    """
+    Continuous Inferno ramp from actual data min to max.  The two endpoints
+    are labelled with quality tier and dB value so the legend is readable
+    without needing to interpret raw numbers.  Dynamic range is derived from
+    raster stats so any observation window renders meaningfully.
+    """
+    try:
+        from qgis.core import (
+            QgsSingleBandPseudoColorRenderer,
+            QgsColorRampShader,
+            QgsRasterShader,
+            QgsRasterBandStats,
+            QgsMessageLog,
+            Qgis,
+        )
+
+        provider = layer.dataProvider()
+        stats = provider.bandStatistics(1, QgsRasterBandStats.All)
+        lo = stats.minimumValue
+        hi = stats.maximumValue
+        span = hi - lo or 1.0
+
+        def _quality(db):
+            if db >= 10:  return "Excellent"
+            if db >= 5:   return "Good"
+            if db >= 0:   return "Marginal"
+            return "Weak"
+
+        lo_label = f"{_quality(lo)}  ({lo:.1f} dB)"
+        hi_label = f"{_quality(hi)}  ({hi:.1f} dB)"
+
+        # Inferno palette: dark purple (weak) → orange → bright yellow (strong)
+        items = [
+            QgsColorRampShader.ColorRampItem(lo,               QColor( 20,  11,  52), lo_label),
+            QgsColorRampShader.ColorRampItem(lo + span * 0.25, QColor(132,  32, 107), ""),
+            QgsColorRampShader.ColorRampItem(lo + span * 0.50, QColor(229,  92,  48), ""),
+            QgsColorRampShader.ColorRampItem(lo + span * 0.75, QColor(253, 187,  48), ""),
+            QgsColorRampShader.ColorRampItem(hi,               QColor(252, 255, 164), hi_label),
+        ]
+
+        fcn = QgsColorRampShader(lo, hi)
+        fcn.setColorRampType(QgsColorRampShader.Interpolated)
+        fcn.setColorRampItemList(items)
+
+        shader = QgsRasterShader(lo, hi)
+        shader.setRasterShaderFunction(fcn)
+
+        renderer = QgsSingleBandPseudoColorRenderer(provider, 1, shader)
+        renderer.setClassificationMin(lo)
+        renderer.setClassificationMax(hi)
+        layer.setRenderer(renderer)
+        layer.setOpacity(0.6)
+        layer.setName(f"Signal Quality  |  {lo_label} → {hi_label}")
+        layer.triggerRepaint()
+        layer.emitStyleChanged()
+
+    except Exception as e:
+        from qgis.core import QgsMessageLog, Qgis
+        QgsMessageLog.logMessage(
+            f"[SNR symbology] Failed: {e}", "MeshCore", Qgis.Warning
+        )
 
 
 def _apply_nodes_plus_labels(layer) -> None:
