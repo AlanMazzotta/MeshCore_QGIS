@@ -110,11 +110,10 @@ The plugin filters to advert packets only for exactly this reason. Other packet 
 An Observer is any MeshCore node that logs every packet it hears to disk and/or to a community MQTT broker. The setup used for PDX coverage analysis:
 
 - **Hardware:** Heltec V3 (ESP32-S3), MeshCore companion firmware, TCP connection on port 5000
-- **Container:** `ghcr.io/agessaman/meshcore-packet-capture:latest`
 - **Brokers:** `mqtt-us-v1.letsmesh.net`, `mqtt-eu-v1.letsmesh.net`, `mqtt-v1.cascadiamesh.org` (all port 443, WebSockets, TLS)
-- **Local log:** `--output /app/data/packets.ndjson` written to a volume-mounted `data/` directory
+- **Local log:** `--output /path/to/packets.ndjson` passed to `packet_capture.py`
 
-To activate local logging, ensure your `docker-compose.yml` includes:
+**Docker (easiest path):** ensure your `docker-compose.yml` includes:
 ```yaml
 command: python packet_capture.py --output /app/data/packets.ndjson
 ```
@@ -127,9 +126,11 @@ docker compose up -d
 
 > `docker compose restart` alone does not re-read a `command:` change in the compose file -- `down` then `up` is required. On Windows PowerShell, run these as separate commands.
 
+**Always-on deployment:** for permanent Observer setups, `packet_capture.py` can be run directly on a Raspberry Pi or a modern OpenWrt-capable router, managed as a system service. Add `--output /path/to/packets.ndjson` to the service's command line and the plugin will read from it the same way.
+
 ### Generating the heatmap
 
-1. Confirm the container is running and `data/packets.ndjson` is growing on disk.
+1. Confirm `packet_capture.py` is running and the packets file is growing on disk.
 2. Wait for at least one advert cycle (~11 minutes with the default PDX Observer config) so the log contains packets from multiple nodes.
 3. Complete pipeline Steps 1 and 5 (Fetch Nodes + Enrich Nodes) so `meshcore_nodes_plus.geojson` exists.
 4. In the **Signal Quality (POC)** section of the dock, paste the full path to your `packets.ndjson` file.
@@ -217,7 +218,7 @@ Runtime scales with DEM pixel count x node count. A smaller metro area with 50 n
 
 ## Future: Live MQTT Signal Ingest
 
-The current Signal Quality implementation reads a local packet log produced by a Docker container. A natural next step is direct MQTT subscription from within the plugin, which would remove the Docker requirement and draw from the full regional packet stream rather than a single Observer's perspective.
+The current Signal Quality implementation reads a local packet log produced by a running `packet_capture.py` process. A natural next step is direct MQTT subscription from within the plugin, which would remove the Docker requirement and draw from the full regional packet stream rather than a single Observer's perspective.
 
 What live MQTT ingest would add:
 
