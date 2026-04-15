@@ -24,19 +24,45 @@
       background: rgba(15, 15, 30, 0.88);
       padding: 10px 16px;
       border-bottom: 1px solid #333;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 6px;
     }
 
-    #header h1 {
+    #header-text h1 {
       font-size: 15px;
       font-weight: bold;
       color: #ffffff;
       letter-spacing: 0.02em;
     }
 
-    #header p {
+    #header-text p {
       font-size: 11px;
       color: #aaa;
       margin-top: 2px;
+    }
+
+    #bookmarks {
+      display: flex;
+      gap: 6px;
+    }
+
+    .bookmark-btn {
+      background: rgba(255,255,255,0.08);
+      border: 1px solid #555;
+      border-radius: 3px;
+      color: #ddd;
+      font-size: 11px;
+      padding: 3px 10px;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+
+    .bookmark-btn:hover {
+      background: rgba(255,255,255,0.16);
+      border-color: #888;
     }
 
     #map {
@@ -81,6 +107,13 @@
     .legend-swatch.circle {
       border-radius: 50%;
       border: 2px solid rgba(255,255,255,0.4);
+    }
+
+    .legend-swatch.gradient {
+      background: linear-gradient(to right, #140b34, #841f6b, #e55c30, #fbbb30, #fcffa4);
+      border-radius: 2px;
+      width: 60px;
+      height: 10px;
     }
 
     .legend-divider {
@@ -160,8 +193,14 @@
 <body>
 
 <div id="header">
-  <h1>Portland MeshCore Network: Terrain-Aware Coverage Analysis</h1>
-  <p>Geometric line-of-sight viewshed per repeater node &mdash; Copernicus GLO-30 DEM, 30 m resolution &mdash; <a href="https://github.com/alanmazzotta/MeshCore_QGIS" style="color:#888">Plugin source</a></p>
+  <div id="header-text">
+    <h1>Portland MeshCore Network: Terrain-Aware Coverage Analysis</h1>
+    <p>Geometric line-of-sight viewshed per repeater node &mdash; Copernicus GLO-30 DEM, 30 m resolution &mdash; <a href="https://github.com/alanmazzotta/MeshCore_QGIS" style="color:#888">Plugin source</a></p>
+  </div>
+  <div id="bookmarks">
+    <button class="bookmark-btn" onclick="zoomOverview()">Overview</button>
+    <button class="bookmark-btn" onclick="zoomObserver()">Observer location</button>
+  </div>
 </div>
 
 <div id="map"></div>
@@ -175,6 +214,17 @@ const map = L.map('map', {
   zoom: 11,
   zoomControl: true,
 });
+
+// ---------------------------------------------------------------------------
+// Bookmarks
+// ---------------------------------------------------------------------------
+function zoomOverview() {
+  map.fitBounds([[44.871055, -124.060599], [46.068096, -121.254082]]);
+}
+
+function zoomObserver() {
+  map.fitBounds([[45.463268, -122.809455], [45.513131, -122.692517]]);
+}
 
 // ---------------------------------------------------------------------------
 // Basemap
@@ -203,6 +253,15 @@ const directionLayer = L.tileLayer('tiles/direction/{z}/{x}/{y}.png', {
   maxZoom: 19,
   maxNativeZoom: 14,
   opacity: 0.6,
+});
+
+// ---------------------------------------------------------------------------
+// SNR heatmap image overlay
+// ---------------------------------------------------------------------------
+const snrBounds = [[44.7143, -123.5918], [46.2023, -122.1538]];
+const snrLayer = L.imageOverlay('snr_heatmap.png', snrBounds, {
+  opacity: 0.65,
+  interactive: false,
 });
 
 // ---------------------------------------------------------------------------
@@ -270,12 +329,12 @@ fetch('nodes.geojson')
       },
     }).addTo(map);
 
-    // Layer control — add after nodes are loaded so it includes them
     L.control.layers(
       {},
       {
         'Coverage (nodes visible)': coverageLayer,
         'Dominant direction':       directionLayer,
+        'Signal Quality (SNR)':     snrLayer,
         'Repeater nodes':           nodesLayer,
       },
       { collapsed: false, position: 'topright' }
@@ -294,6 +353,10 @@ legend.onAdd = () => {
     <div class="legend-row"><div class="legend-swatch" style="background:#FEC44F"></div><span>3–6</span></div>
     <div class="legend-row"><div class="legend-swatch" style="background:#D95F0E"></div><span>6–16</span></div>
     <div class="legend-row"><div class="legend-swatch" style="background:#993304"></div><span>16+</span></div>
+    <hr class="legend-divider">
+    <h4>Signal Quality (SNR)</h4>
+    <div class="legend-row"><div class="legend-swatch gradient"></div></div>
+    <div class="legend-row" style="justify-content:space-between;width:74px"><span>Weak</span><span>Strong</span></div>
     <hr class="legend-divider">
     <h4>Node class</h4>
     <div class="legend-row"><div class="legend-swatch circle" style="background:#D7191C"></div><span>Critical</span></div>
