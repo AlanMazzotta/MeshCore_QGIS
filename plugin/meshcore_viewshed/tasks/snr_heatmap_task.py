@@ -83,9 +83,16 @@ class SnrHeatmapTask(QgsTask):
         self.log = log_fn
         self.error = None
         self.output_path = os.path.join(work_dir, "data", "meshcore_snr_heatmap.tif")
-        # Remove any existing layer now (main thread) to release the file lock
-        for lyr in QgsProject.instance().mapLayersByName("Signal Quality (SNR dB)"):
-            QgsProject.instance().removeMapLayer(lyr.id())
+        # Remove any existing SNR layer by source path (name may have been
+        # changed by symbology), so GDAL can overwrite the TIF without a lock.
+        norm = os.path.normcase(self.output_path)
+        to_remove = [
+            lyr.id()
+            for lyr in QgsProject.instance().mapLayers().values()
+            if os.path.normcase(lyr.source()) == norm
+        ]
+        for lid in to_remove:
+            QgsProject.instance().removeMapLayer(lid)
 
     def run(self):
         try:
@@ -218,9 +225,12 @@ class SnrHeatmapTask(QgsTask):
         )
 
         # --- 4. Write GeoTIFF ---
+        # Write to a temp file first so GDAL never tries to delete the
+        # existing TIF (which QGIS may still have open on Windows).
         os.makedirs(os.path.dirname(self.output_path), exist_ok=True)
+        tmp_path = self.output_path + ".tmp.tif"
         driver = gdal.GetDriverByName("GTiff")
-        ds = driver.Create(self.output_path, ncols, nrows, 1, gdal.GDT_Float32)
+        ds = driver.Create(tmp_path, ncols, nrows, 1, gdal.GDT_Float32)
         ds.SetGeoTransform([west, pixel, 0, north, 0, -pixel])
         srs = osr.SpatialReference()
         srs.ImportFromEPSG(4326)
@@ -230,11 +240,25 @@ class SnrHeatmapTask(QgsTask):
         band.SetNoDataValue(-9999.0)
         ds.FlushCache()
         ds = None
+        self._tmp_path = tmp_path
 
         return True
 
     def finished(self, result):
         if result:
+            # Swap temp file -> final path now that QGIS has released any lock
+            tmp = getattr(self, "_tmp_path", None)
+            if tmp and os.path.exists(tmp):
+                if os.path.exists(self.output_path):
+                    try:
+                        os.remove(self.output_path)
+                    except OSError as e:
+                        self.log(f"[SNR] Warning: could not remove old TIF: {e}")
+                try:
+                    os.rename(tmp, self.output_path)
+                except OSError as e:
+                    self.log(f"[SNR] Warning: rename failed, loading temp file: {e}")
+                    self.output_path = tmp
             self.log("[SNR] Heatmap written.")
             self._load_layer()
         else:
@@ -243,10 +267,12 @@ class SnrHeatmapTask(QgsTask):
     def _load_layer(self):
         if not os.path.exists(self.output_path):
             return
-        layer_name = "Signal Quality (SNR dB)"
-        for lyr in QgsProject.instance().mapLayersByName(layer_name):
-            QgsProject.instance().removeMapLayer(lyr.id())
-        layer = QgsRasterLayer(self.output_path, layer_name)
+        # Remove any existing layer pointing at this file (name may have changed)
+        norm = os.path.normcase(self.output_path)
+        for lyr in list(QgsProject.instance().mapLayers().values()):
+            if os.path.normcase(lyr.source()) == norm:
+                QgsProject.instance().removeMapLayer(lyr.id())
+        layer = QgsRasterLayer(self.output_path, "Signal Quality (SNR dB)")
         if layer.isValid():
             QgsProject.instance().addMapLayer(layer)
             from meshcore_viewshed.symbology import apply_snr_heatmap_symbology
