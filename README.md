@@ -237,6 +237,13 @@ The local-file POC and the live-MQTT implementation share the same interpolation
 
 ---
 
+## Related Projects
+
+- **[CascadiaMesh Analyzer — Live Map](https://analyzer.cascadiamesh.org/#/live)** — real-time regional mesh network map for the Pacific Northwest; a natural companion to the terrain analysis this plugin produces
+- **[MeshAmerica](https://meshamerica.com/)** — nonprofit building open, community-owned mesh infrastructure across the US; the kind of network planning this plugin is designed to support
+
+---
+
 ## Data Sources
 
 - **Node data:** MeshCore public map API (`map.meshcore.dev`), unauthenticated, live global registry
