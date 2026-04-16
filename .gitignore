@@ -57,6 +57,10 @@ viewsheds/
 README_v1_archive.md
 docs/GISinAction2026/
 
+# GDAL / QGIS sidecar files
+*.aux.xml
+*.qmd
+
 # OS
 .DS_Store
 Thumbs.db
