@@ -256,8 +256,9 @@
 const map = L.map('map', {
   center: [45.52, -122.68],
   zoom: 11,
-  zoomControl: true,
+  zoomControl: false,
 });
+L.control.zoom({ position: 'bottomright' }).addTo(map);
 
 // ---------------------------------------------------------------------------
 // Bookmarks
@@ -319,7 +320,8 @@ const hillshadeLayer = L.imageOverlay('hillshade.png', baseBounds, {
 // Coverage raster tiles
 // ---------------------------------------------------------------------------
 const coverageLayer = L.tileLayer('tiles/coverage/{z}/{x}/{y}.png', {
-  minZoom: 9,
+  minZoom: 7,
+  minNativeZoom: 9,
   maxZoom: 19,
   maxNativeZoom: 14,
   opacity: 0.75,
@@ -330,7 +332,8 @@ const coverageLayer = L.tileLayer('tiles/coverage/{z}/{x}/{y}.png', {
 // Directional raster tiles
 // ---------------------------------------------------------------------------
 const directionLayer = L.tileLayer('tiles/direction/{z}/{x}/{y}.png', {
-  minZoom: 9,
+  minZoom: 7,
+  minNativeZoom: 9,
   maxZoom: 19,
   maxNativeZoom: 14,
   opacity: 0.6,
