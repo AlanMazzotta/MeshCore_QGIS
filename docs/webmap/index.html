@@ -137,6 +137,10 @@
       border-color: #444 !important;
     }
 
+    /* Base layer blend modes */
+    .hillshade-overlay { mix-blend-mode: screen; }
+    .dem-overlay       { mix-blend-mode: multiply; }
+
     /* Popup styling */
     .leaflet-popup-content-wrapper {
       background: rgba(15, 15, 30, 0.95);
@@ -254,13 +258,15 @@ fetch('DEM_extent_highlight.geojson')
   .then(data => demHighlightLayer.addData(data));
 
 const demGrayLayer = L.imageOverlay('dem_gray.png', baseBounds, {
-  opacity: 0.5,
+  opacity: 0.25,
   interactive: false,
+  className: 'dem-overlay',
 });
 
 const hillshadeLayer = L.imageOverlay('hillshade.png', baseBounds, {
-  opacity: 0.5,
+  opacity: 0.6,
   interactive: false,
+  className: 'hillshade-overlay',
 });
 
 // ---------------------------------------------------------------------------
