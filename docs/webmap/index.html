@@ -288,8 +288,6 @@ map.createPane('hillshadePane');
 map.createPane('demPane');
 map.getPane('demPane').style.zIndex = 250;
 map.getPane('hillshadePane').style.zIndex = 260;
-map.getPane('demPane').style.mixBlendMode = 'screen';
-map.getPane('hillshadePane').style.mixBlendMode = 'screen';
 
 const demHighlightLayer = L.geoJSON(null, {
   style: {
@@ -306,13 +304,13 @@ fetch('DEM_extent_highlight.geojson')
   .then(data => demHighlightLayer.addData(data));
 
 const demGrayLayer = L.imageOverlay('dem_gray.png', baseBounds, {
-  opacity: 0.4,
+  opacity: 0.8,
   interactive: false,
   pane: 'demPane',
 });
 
 const hillshadeLayer = L.imageOverlay('hillshade.png', baseBounds, {
-  opacity: 0.6,
+  opacity: 0.8,
   interactive: false,
   pane: 'hillshadePane',
 });
