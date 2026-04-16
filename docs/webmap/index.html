@@ -235,6 +235,35 @@ L.tileLayer('https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
 }).addTo(map);
 
 // ---------------------------------------------------------------------------
+// Base enhancements — DEM extent highlight, DEM grayscale, hillshade
+// ---------------------------------------------------------------------------
+const baseBounds = [[44.9201, -123.9176], [46.0257, -121.5957]];
+
+const demHighlightLayer = L.geoJSON(null, {
+  style: {
+    fillColor: '#c8c8d2',
+    fillOpacity: 0.07,
+    color: '#c8c8d2',
+    weight: 1,
+    opacity: 0.2,
+  },
+  interactive: false,
+});
+fetch('DEM_extent_highlight.geojson')
+  .then(r => r.json())
+  .then(data => demHighlightLayer.addData(data));
+
+const demGrayLayer = L.imageOverlay('dem_gray.png', baseBounds, {
+  opacity: 0.5,
+  interactive: false,
+});
+
+const hillshadeLayer = L.imageOverlay('hillshade.png', baseBounds, {
+  opacity: 0.5,
+  interactive: false,
+});
+
+// ---------------------------------------------------------------------------
 // Coverage raster tiles
 // ---------------------------------------------------------------------------
 const coverageLayer = L.tileLayer('tiles/coverage/{z}/{x}/{y}.png', {
@@ -332,6 +361,9 @@ fetch('nodes.geojson')
     L.control.layers(
       {},
       {
+        'DEM extent highlight':     demHighlightLayer,
+        'DEM grayscale':            demGrayLayer,
+        'Hillshade':                hillshadeLayer,
         'Coverage (nodes visible)': coverageLayer,
         'Dominant direction':       directionLayer,
         'Signal Quality (SNR)':     snrLayer,
@@ -339,6 +371,12 @@ fetch('nodes.geojson')
       },
       { collapsed: false, position: 'topright' }
     ).addTo(map);
+
+    // Label layer always on top — not in layer control
+    L.tileLayer('https://basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png', {
+      maxZoom: 19,
+      pane: 'shadowPane',   // renders above overlays, below markers
+    }).addTo(map);
   });
 
 // ---------------------------------------------------------------------------
