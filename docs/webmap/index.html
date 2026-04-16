@@ -137,9 +137,42 @@
       border-color: #444 !important;
     }
 
-    /* Base layer blend modes */
-    .hillshade-overlay { mix-blend-mode: screen; }
-    .dem-overlay       { mix-blend-mode: multiply; }
+    /* Kebab toggle for layer control */
+    .leaflet-control-layers-toggle {
+      background-image: none !important;
+      width: 30px !important;
+      height: 30px !important;
+      display: flex !important;
+      align-items: center;
+      justify-content: center;
+    }
+    .leaflet-control-layers-toggle::after {
+      content: '⋮';
+      font-size: 20px;
+      color: #ddd;
+      line-height: 1;
+    }
+
+    /* Legend toggle button */
+    .legend-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 5px;
+    }
+    .legend-toggle {
+      background: none;
+      border: none;
+      color: #ddd;
+      font-size: 18px;
+      cursor: pointer;
+      padding: 0 2px;
+      line-height: 1;
+    }
+
+    /* Base layer panes — blend modes applied at pane level */
+    .leaflet-hillshade-pane { mix-blend-mode: screen; }
+    .leaflet-dem-pane       { mix-blend-mode: screen; }
 
     /* Popup styling */
     .leaflet-popup-content-wrapper {
@@ -243,6 +276,14 @@ L.tileLayer('https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
 // ---------------------------------------------------------------------------
 const baseBounds = [[44.9201, -123.9176], [46.0257, -121.5957]];
 
+// Custom panes for blend modes — must be created before layers
+map.createPane('hillshadePane');
+map.createPane('demPane');
+map.getPane('hillshadePane').style.mixBlendMode = 'screen';
+map.getPane('demPane').style.mixBlendMode = 'screen';
+map.getPane('hillshadePane').style.zIndex = 201;
+map.getPane('demPane').style.zIndex = 200;
+
 const demHighlightLayer = L.geoJSON(null, {
   style: {
     fillColor: '#c8c8d2',
@@ -258,15 +299,15 @@ fetch('DEM_extent_highlight.geojson')
   .then(data => demHighlightLayer.addData(data));
 
 const demGrayLayer = L.imageOverlay('dem_gray.png', baseBounds, {
-  opacity: 0.25,
+  opacity: 0.4,
   interactive: false,
-  className: 'dem-overlay',
+  pane: 'demPane',
 });
 
 const hillshadeLayer = L.imageOverlay('hillshade.png', baseBounds, {
   opacity: 0.6,
   interactive: false,
-  className: 'hillshade-overlay',
+  pane: 'hillshadePane',
 });
 
 // ---------------------------------------------------------------------------
@@ -375,7 +416,7 @@ fetch('nodes.geojson')
         'Signal Quality (SNR)':     snrLayer,
         'Repeater nodes':           nodesLayer,
       },
-      { collapsed: false, position: 'topright' }
+      { collapsed: true, position: 'topright' }
     ).addTo(map);
 
     // Label layer always on top — not in layer control
@@ -392,32 +433,43 @@ const legend = L.control({ position: 'bottomleft' });
 legend.onAdd = () => {
   const div = L.DomUtil.create('div', 'legend');
   div.innerHTML = `
-    <h4>Coverage (nodes visible)</h4>
-    <div class="legend-row"><div class="legend-swatch" style="background:#FFF7BC"></div><span>1–3</span></div>
-    <div class="legend-row"><div class="legend-swatch" style="background:#FEC44F"></div><span>3–6</span></div>
-    <div class="legend-row"><div class="legend-swatch" style="background:#D95F0E"></div><span>6–16</span></div>
-    <div class="legend-row"><div class="legend-swatch" style="background:#993304"></div><span>16+</span></div>
-    <hr class="legend-divider">
-    <h4>Signal Quality (SNR)</h4>
-    <div class="legend-row"><div class="legend-swatch gradient"></div></div>
-    <div class="legend-row" style="justify-content:space-between;width:74px"><span>Weak</span><span>Strong</span></div>
-    <hr class="legend-divider">
-    <h4>Node class</h4>
-    <div class="legend-row"><div class="legend-swatch circle" style="background:#D7191C"></div><span>Critical</span></div>
-    <div class="legend-row"><div class="legend-swatch circle" style="background:#2C7BB6"></div><span>Backbone</span></div>
-    <div class="legend-row"><div class="legend-swatch circle" style="background:#1A9641"></div><span>Redundant</span></div>
-    <div class="legend-row"><div class="legend-swatch circle" style="background:#888888"></div><span>Marginal</span></div>
-    <div class="legend-row"><div class="legend-swatch circle" style="background:#CCCCCC"></div><span>No TIF</span></div>
-    <hr class="legend-divider">
-    <h4>Dominant direction</h4>
-    <div class="legend-row"><div class="legend-swatch" style="background:#1E64C8"></div><span>N</span></div>
-    <div class="legend-row"><div class="legend-swatch" style="background:#00B4B4"></div><span>NE</span></div>
-    <div class="legend-row"><div class="legend-swatch" style="background:#32B432"></div><span>E</span></div>
-    <div class="legend-row"><div class="legend-swatch" style="background:#B4DC00"></div><span>SE</span></div>
-    <div class="legend-row"><div class="legend-swatch" style="background:#DC8200"></div><span>S</span></div>
-    <div class="legend-row"><div class="legend-swatch" style="background:#DC3200"></div><span>SW</span></div>
-    <div class="legend-row"><div class="legend-swatch" style="background:#A000C8"></div><span>W</span></div>
-    <div class="legend-row"><div class="legend-swatch" style="background:#501EB4"></div><span>NW</span></div>
+    <div class="legend-header">
+      <h4 style="margin:0">Legend</h4>
+      <button class="legend-toggle" onclick="
+        var b = this.closest('.legend').querySelector('.legend-body');
+        var hidden = b.style.display === 'none';
+        b.style.display = hidden ? '' : 'none';
+        this.textContent = hidden ? '⋮' : '×';
+      " type="button">⋮</button>
+    </div>
+    <div class="legend-body">
+      <h4>Coverage (nodes visible)</h4>
+      <div class="legend-row"><div class="legend-swatch" style="background:#FFF7BC"></div><span>1–3</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:#FEC44F"></div><span>3–6</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:#D95F0E"></div><span>6–16</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:#993304"></div><span>16+</span></div>
+      <hr class="legend-divider">
+      <h4>Signal Quality (SNR)</h4>
+      <div class="legend-row"><div class="legend-swatch gradient"></div></div>
+      <div class="legend-row" style="justify-content:space-between;width:74px"><span>Weak</span><span>Strong</span></div>
+      <hr class="legend-divider">
+      <h4>Node class</h4>
+      <div class="legend-row"><div class="legend-swatch circle" style="background:#D7191C"></div><span>Critical</span></div>
+      <div class="legend-row"><div class="legend-swatch circle" style="background:#2C7BB6"></div><span>Backbone</span></div>
+      <div class="legend-row"><div class="legend-swatch circle" style="background:#1A9641"></div><span>Redundant</span></div>
+      <div class="legend-row"><div class="legend-swatch circle" style="background:#888888"></div><span>Marginal</span></div>
+      <div class="legend-row"><div class="legend-swatch circle" style="background:#CCCCCC"></div><span>No TIF</span></div>
+      <hr class="legend-divider">
+      <h4>Dominant direction</h4>
+      <div class="legend-row"><div class="legend-swatch" style="background:#1E64C8"></div><span>N</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:#00B4B4"></div><span>NE</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:#32B432"></div><span>E</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:#B4DC00"></div><span>SE</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:#DC8200"></div><span>S</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:#DC3200"></div><span>SW</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:#A000C8"></div><span>W</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:#501EB4"></div><span>NW</span></div>
+    </div>
   `;
   return div;
 };
