@@ -301,19 +301,19 @@ const demHighlightLayer = L.geoJSON(null, {
 });
 fetch('DEM_extent_highlight.geojson')
   .then(r => r.json())
-  .then(data => demHighlightLayer.addData(data));
+  .then(data => { demHighlightLayer.addData(data); demHighlightLayer.addTo(map); });
 
 const demGrayLayer = L.imageOverlay('dem_gray.png', baseBounds, {
-  opacity: 0.8,
+  opacity: 0.08,
   interactive: false,
   pane: 'demPane',
-});
+}).addTo(map);
 
 const hillshadeLayer = L.imageOverlay('hillshade.png', baseBounds, {
-  opacity: 0.8,
+  opacity: 0.3,
   interactive: false,
   pane: 'hillshadePane',
-});
+}).addTo(map);
 
 // ---------------------------------------------------------------------------
 // Coverage raster tiles
