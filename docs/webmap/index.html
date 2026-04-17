@@ -403,6 +403,7 @@ fetch('nodes.geojson')
   .then(r => r.json())
   .then(data => {
     const nodesLayer = L.geoJSON(data, {
+      filter: feature => feature.properties.coverage_km2 > 0,
       pointToLayer: (feature, latlng) => {
         const m = nodeMarker(feature.properties);
         m.setLatLng(latlng);
@@ -466,7 +467,6 @@ legend.onAdd = () => {
       <div class="legend-row"><div class="legend-swatch circle" style="background:#2C7BB6"></div><span>Backbone</span></div>
       <div class="legend-row"><div class="legend-swatch circle" style="background:#1A9641"></div><span>Redundant</span></div>
       <div class="legend-row"><div class="legend-swatch circle" style="background:#888888"></div><span>Marginal</span></div>
-      <div class="legend-row"><div class="legend-swatch circle" style="background:#CCCCCC"></div><span>No TIF</span></div>
       <hr class="legend-divider">
       <h4>Dominant direction</h4>
       <div class="legend-row"><div class="legend-swatch" style="background:#1E64C8"></div><span>N</span></div>
