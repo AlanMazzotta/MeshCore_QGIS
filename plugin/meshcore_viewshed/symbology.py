@@ -8,6 +8,7 @@ Enriched nodes   — 5-class rule-based renderer matching Test_1_ASM.
 SNR heatmap      — Continuous Inferno ramp, dynamic range from raster stats.
 """
 
+from qgis.core import Qgis
 from qgis.PyQt.QtGui import QColor, QFont
 
 
@@ -186,11 +187,11 @@ def apply_directional_symbology(layer) -> None:
 # paths, which is the fundamental mesh property. Nodes with 0-2 peers are
 # effectively leaf nodes or spurs regardless of their coverage reach.
 _NODE_RULES = [
-    ('"coverage_km2" >= 100 AND "peer_count" < 3',  "Critical", (215,  25,  28), 10.5, 0.4),
-    ('"coverage_km2" >= 100 AND "peer_count" >= 3', "Backbone", ( 44, 123, 182), 10.5, 0.4),
-    ('"coverage_km2" < 100  AND "peer_count" >= 3', "Redundant",(26,  150,  65), 10.5, 0.4),
-    ('"coverage_km2" < 100  AND "peer_count" < 3',  "Marginal", (136, 136, 136),  9.0, 0.3),
-    ('"coverage_km2" = 0',                          "No TIF",   (204, 204, 204),  7.5, 0.2),
+    ('"coverage_km2" >= 100 AND "peer_count" < 3',  "Critical", (215,  25,  28), 8.0, 0.8),
+    ('"coverage_km2" >= 100 AND "peer_count" >= 3', "Backbone", ( 44, 123, 182), 8.0, 0.8),
+    ('"coverage_km2" < 100  AND "peer_count" >= 3', "Redundant",(26,  150,  65), 8.0, 0.8),
+    ('"coverage_km2" < 100  AND "peer_count" < 3',  "Marginal", (136, 136, 136), 8.0, 0.8),
+    ('"coverage_km2" = 0',                          "No TIF",   (204, 204, 204), 8.0, 0.8),
 ]
 
 
@@ -223,8 +224,8 @@ def apply_nodes_plus_symbology(layer) -> None:
 
         # Layer 0: reach circle (drawn first = behind the dot)
         circle = QgsSimpleMarkerSymbolLayer()
-        circle.setColor(QColor(r, g, b, 77))             # 30% opacity fill
-        circle.setStrokeColor(QColor(153, 153, 153, 128)) # 60% grey, 50% opacity
+        circle.setColor(QColor(r, g, b, 38))             # 15% opacity fill
+        circle.setStrokeColor(QColor(153, 153, 153, 38))  # 15% opacity neutral grey stroke
         circle.setStrokeWidth(0.4)
         circle.setShape(QgsSimpleMarkerSymbolLayer.Circle)
         circle.setSize(1)
@@ -249,7 +250,13 @@ def apply_nodes_plus_symbology(layer) -> None:
         rule.setLabel(label)
         root_rule.appendChild(rule)
 
-    layer.setRenderer(QgsRuleBasedRenderer(root_rule))
+    from qgis.core import QgsFeatureRequest
+    renderer = QgsRuleBasedRenderer(root_rule)
+    renderer.setOrderBy(QgsFeatureRequest.OrderBy([
+        QgsFeatureRequest.OrderByClause('coverage_km2', ascending=False)
+    ]))
+    renderer.setOrderByEnabled(True)
+    layer.setRenderer(renderer)
     _apply_nodes_plus_labels(layer)
     layer.triggerRepaint()
 
@@ -323,7 +330,7 @@ def apply_snr_heatmap_symbology(layer) -> None:
 
 
 def _apply_nodes_plus_labels(layer) -> None:
-    """Node name label, 7pt white text with thin black halo."""
+    """Node name label, 7pt white Cascadia Code Light with 70% grey halo, placed below marker."""
     from qgis.core import (
         QgsPalLayerSettings,
         QgsVectorLayerSimpleLabeling,
@@ -333,7 +340,7 @@ def _apply_nodes_plus_labels(layer) -> None:
     )
 
     fmt = QgsTextFormat()
-    fmt.setFont(QFont("Arial", 7))
+    fmt.setFont(QFont("Cascadia Code Light", 7))
     fmt.setSize(7)
     fmt.setSizeUnit(QgsUnitTypes.RenderPoints)
     fmt.setColor(QColor(255, 255, 255))
@@ -342,13 +349,15 @@ def _apply_nodes_plus_labels(layer) -> None:
     buf.setEnabled(True)
     buf.setSize(0.8)
     buf.setSizeUnit(QgsUnitTypes.RenderMillimeters)
-    buf.setColor(QColor(0, 0, 0))
+    buf.setColor(QColor(77, 77, 77))  # 70% grey
     fmt.setBuffer(buf)
 
     settings = QgsPalLayerSettings()
     settings.fieldName = "name"
     settings.enabled = True
     settings.setFormat(fmt)
+    settings.placement = Qgis.LabelPlacement.OverPoint
+    settings.quadOffset = QgsPalLayerSettings.QuadrantBelow
 
     layer.setLabeling(QgsVectorLayerSimpleLabeling(settings))
     layer.setLabelsEnabled(True)

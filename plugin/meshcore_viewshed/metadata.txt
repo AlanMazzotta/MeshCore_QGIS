@@ -1,6 +1,6 @@
 [general]
 name=MeshCore Viewshed
-qgisMinimumVersion=3.16
+qgisMinimumVersion=3.34
 description=Terrain line-of-sight viewshed analysis for MeshCore repeater networks. Fetches live node data, downloads DEM, runs per-node viewshed analysis, and loads results as QGIS layers.
 version=0.1.0
 author=AlanMazzotta

@@ -271,6 +271,8 @@ def run(nodes_path, cumulative_path, viewshed_dir, output_path, freq_mhz=910):  
         new_props["dominant_dir"]    = dominant_dir
         new_props["coverage_km2"]    = coverage_km2
         new_props["los_peer_count"]  = los_peer_count
+        # FSPL predictions for the link performance audit (see README Future section):
+        # delta between these values and observed multi-observer SNR surfaces per-node performance gaps.
         new_props["avg_peer_fspl"]   = avg_peer_fspl
         new_props["min_peer_fspl"]   = min_peer_fspl
         new_props["max_peer_fspl"]   = max_peer_fspl
