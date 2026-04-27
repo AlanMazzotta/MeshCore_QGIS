@@ -49,7 +49,7 @@ Downloads a Copernicus GLO-30 DEM tile (30 m resolution) from OpenTopography. Sa
 > **Tip:** load a basemap first (QuickMapServices or an XYZ tile layer) so you can visually confirm your canvas covers the right area before downloading. A typical metro-area DEM downloads in under a minute.
 
 ### 3. Run Viewshed
-Computes a geometric line-of-sight viewshed for every repeater node using `gdal_viewshed` (observer height: 2 m above terrain). Individual TIFs are saved to `viewsheds/meshcore/` keyed by node hash; existing TIFs are skipped on re-runs. After all nodes are processed, they are summed via NumPy to produce `viewsheds/meshcore/cumulative_viewshed.tif`, where each pixel value is the count of repeaters with unobstructed line-of-sight to that location. Loads automatically with an amber heat ramp.
+Computes a geometric line-of-sight viewshed for every repeater node using `gdal_viewshed` (observer height: 2 m above terrain). Individual TIFs are saved to `viewsheds/meshcore/` keyed by node hash; existing TIFs are skipped on re-runs. After all nodes are processed, they are summed via NumPy to produce `viewsheds/meshcore/cumulative_viewshed.tif`, where each pixel value is the count of repeaters with unobstructed line-of-sight to that location. Loads automatically with a 4-class discrete ramp (pale yellow → amber → burnt orange → deep rust) at 60% opacity. Class breaks are derived from the actual pixel distribution using log-scale percentiles.
 
 ### 4. Directional Raster
 Classifies each visible pixel by the compass bearing from its nearest repeater into eight 45-degree sectors (N, NE, E, SE, S, SW, W, NW). Saves `viewsheds/meshcore/directional_viewshed.tif`. Useful for identifying azimuths that are structurally underserved by the current deployment.
@@ -63,6 +63,9 @@ Samples the viewshed outputs at each repeater location and appends four derived 
 | `viewshed_pixels` | Total visible pixel count from the node's individual TIF |
 | `coverage_km2` | Pixel count converted to approximate km² at the node's latitude |
 | `dominant_dir` | Modal compass sector of bearings from the node to all its visible pixels |
+| `avg_peer_fspl` | Average free-space path loss to all LOS peers (dB) |
+| `min_peer_fspl` | Best-case FSPL to nearest LOS peer (dB) |
+| `max_peer_fspl` | Worst-case FSPL to most distant LOS peer (dB) |
 
 The enriched layer loads with antenna icon markers and proportional reach circles. Nodes are classified by `coverage_km2` (threshold: 100 km²) crossed with `peer_count` (threshold: 3 peers):
 
@@ -103,7 +106,7 @@ Radio signal quality is reported using two metrics: **SNR** and **RSSI**. Both a
 
 The plugin filters to advert packets only for exactly this reason. Other packet types (text messages, ACKs, relay forwards) carry SNR data but do not reliably expose the original transmitter's identity without full payload decoding.
 
-**Inverse-distance weighting (IDW)** is the same spatial interpolation method available in QGIS's own interpolation tools. Each observation point (node location + best observed SNR) influences surrounding grid cells in proportion to `1/distance²`. Closer nodes dominate; distant ones contribute proportionally less. The resulting raster should be read as a relative surface of "how well can the mesh be heard from the Observer's location given current network activity" -- not an absolute propagation model. The IDW surface will be smooth regardless of terrain; it does not model diffraction, reflection, or obstruction. That is precisely why comparing it against the viewshed layer is analytically useful.
+**Inverse-distance weighting (IDW)** is the same spatial interpolation method available in QGIS's own interpolation tools. Each observation point (node location + best observed SNR) influences surrounding grid cells in proportion to `1/distance²`. Closer nodes dominate; distant ones contribute proportionally less. The result is not a map of the network — it is a map of what the mesh sounds like from one antenna. The IDW surface will be smooth regardless of terrain; it does not model diffraction, reflection, or obstruction. That is precisely why comparing it against the viewshed layer is analytically useful.
 
 ### Observer setup
 
@@ -165,9 +168,10 @@ This is a geometric model, not an RF model. It does not account for Fresnel zone
 
 ## Portland, Oregon: Worked Example
 
-**Network:** 253 repeater nodes retained from 25,115 global API records (filtered to DEM extent).
+**Network:** 387 repeater nodes retained from 25,115 global API records (filtered to DEM extent).
+**Node classes:** Critical 65 | Backbone 163 | Redundant 80 | Marginal 79
 **DEM:** Copernicus GLO-30, 5,906 x 1,989 px, ~17,000 km²: West Hills, Tualatin Valley, Columbia River corridor, western Columbia Gorge.
-**Compute time:** ~35 minutes for all 253 viewsheds on a mid-range laptop.
+**Compute time:** ~35 minutes for all 387 viewsheds on a mid-range laptop.
 
 ### Coverage
 100% of land pixels covered by at least one repeater. The distribution is the informative signal: valley floor typically 5-25 repeaters, terrain-shaded southwest areas as low as 1-3.
@@ -188,9 +192,9 @@ This is a geometric model, not an RF model. It does not account for Fresnel zone
 South and southwest are meaningfully underserved. This reflects the north-south orientation of the West Hills and Chehalem Mountain ridgelines, which cast terrain shadows on their southern slopes. New siting on south-facing high ground is the only fix; the analysis identifies exactly where.
 
 ### Node Enrichment Summary
-- `peer_count`: range 0-125, mean 9.1
-- `coverage_km2`: range 0.07-1,608 km², mean ~201 km², a **23,000x spread** between least and most effective nodes
-- `dominant_dir`: E dominant for 92 nodes, NE for 43, NW for 30, W for 24
+- `peer_count`: range 0-138, mean 9.1
+- `coverage_km2`: range 0.07-2,452 km², mean ~201 km², a **23,000x spread** between least and most effective nodes
+- `dominant_dir`: distribution is run-dependent; varies with active node count and network state
 
 ### Key Findings
 
@@ -235,12 +239,34 @@ What it requires:
 
 The local-file POC and the live-MQTT implementation share the same interpolation and symbology code; only the data collection layer changes.
 
+### Link Performance Audit
+
+Live multi-observer MQTT data would unlock a second analytical layer: comparing geometrically predicted signal strength against observed SNR to surface per-node performance gaps.
+
+The plugin already computes free-space path loss (FSPL) between every pair of LOS peers during Step 5 — the predicted signal degradation over each geometric link based on distance and 915 MHz frequency. This value is currently computed but not yet used analytically.
+
+With multi-observer SNR data, the delta between predicted and observed performance becomes meaningful:
+
+| Performance gap | Interpretation |
+|---|---|
+| Near zero | Node performing as terrain geometry predicts |
+| Large negative | Underperforming — antenna issue, hardware degradation, or obstruction the DEM missed (buildings, vegetation) |
+| Large positive | Overperforming — possible reflection, atmospheric ducting, or DEM pessimism |
+
+A Critical node with a near-zero gap is structurally isolated by terrain — new infrastructure is the only fix. A Critical node with a large negative gap is a hardware investigation candidate before any planning decisions are made. The viewshed alone cannot distinguish these two cases.
+
+Single-observer SNR data is insufficient for this analysis because the heatmap is observer-relative — it reflects what one antenna hears, not a network-wide truth. Multi-observer MQTT aggregation removes that subjectivity and produces a performance surface that can be meaningfully compared against FSPL predictions at each node.
+
+This makes the link performance audit a natural follow-on to live MQTT ingest rather than a separate feature.
+
 ---
 
 ## Related Projects
 
 - **[CascadiaMesh Analyzer — Live Map](https://analyzer.cascadiamesh.org/#/live)** — real-time regional mesh network map for the Pacific Northwest; a natural companion to the terrain analysis this plugin produces
 - **[MeshAmerica](https://meshamerica.com/)** — nonprofit building open, community-owned mesh infrastructure across the US; the kind of network planning this plugin is designed to support
+- **[PCC Geomatics](https://www.pcc.edu/programs/geographic-information-systems/)** — Portland Community College Geomatics program; academic home of this project
+- **[LetsMesh Analyzer](https://analyzer.letsmesh.net)** — community mesh network analysis tool
 
 ---
 
