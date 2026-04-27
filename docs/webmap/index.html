@@ -91,7 +91,7 @@
       font-size: 11px;
       line-height: 1.6;
       min-width: 160px;
-      margin-bottom: 20px;
+      margin-bottom: 32px;
     }
 
     .legend h4 {
@@ -409,7 +409,7 @@
 
       <div class="splash-slide">
         <h2>Where does the Portland MeshCore network actually reach?</h2>
-        <p>Each MeshCore repeater node broadcasts from a fixed position on the landscape. Terrain determines what it can see and therefore what it can serve. This map stacks individual geometric viewsheds for 387 Portland area repeaters into a single cumulative coverage surface. Pixel values represent the count of nodes with unobstructed line-of-sight to each ground location. The plugin loads automatically with a 4-class discrete ramp (pale yellow &rarr; amber &rarr; burnt orange &rarr; deep rust) at 60% opacity. Class breaks are derived from the actual pixel distribution using log-scale percentiles.</p>
+        <p>Each MeshCore repeater node broadcasts from a fixed position on the landscape. Terrain determines what it can see and therefore what it can serve. This map stacks individual geometric viewsheds for 387 Portland area repeaters into a single cumulative coverage surface. Pixel values represent the count of nodes with unobstructed line-of-sight to each ground location. The plugin loads automatically with a 3-class discrete ramp (pale yellow &rarr; burnt orange &rarr; deep rust) at 60% opacity. Class breaks are derived from the actual pixel distribution using log-scale percentiles.</p>
       </div>
 
       <div class="splash-slide">
@@ -537,7 +537,7 @@ const coverageLayer = L.tileLayer('tiles/coverage/{z}/{x}/{y}.png', {
   maxZoom: 19,
   maxNativeZoom: 14,
   opacity: 0.75,
-  attribution: 'Coverage: MeshCore Viewshed Plugin',
+  attribution: '',
 }).addTo(map);
 
 // ---------------------------------------------------------------------------
@@ -666,9 +666,8 @@ legend.onAdd = () => {
     <div class="legend-body">
       <h4>Coverage (nodes visible)</h4>
       <div class="legend-row"><div class="legend-swatch" style="background:#FFF7BC"></div><span>1–3</span></div>
-      <div class="legend-row"><div class="legend-swatch" style="background:#FEC44F"></div><span>3–6</span></div>
-      <div class="legend-row"><div class="legend-swatch" style="background:#D95F0E"></div><span>6–16</span></div>
-      <div class="legend-row"><div class="legend-swatch" style="background:#993304"></div><span>16+</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:#D95F0E"></div><span>3–12</span></div>
+      <div class="legend-row"><div class="legend-swatch" style="background:#993304"></div><span>12+</span></div>
       <hr class="legend-divider">
       <h4>Signal Quality (SNR)</h4>
       <div class="legend-row"><div class="legend-swatch gradient"></div></div>
