@@ -43,6 +43,12 @@ project/
 
 # Script outputs — generated at runtime, never commit
 scripts/coverage_breaks.json
+scripts/generate_radar_charts.py
+scripts/radar_final.py
+
+# Unused / scratch assets
+QR_codes/MeshCore QGIS Live Example_update.svg
+docs/webmap/DEM_extent_highlight_styled.geojson
 
 # Pipeline outputs — generated at runtime, never commit
 *.tif
