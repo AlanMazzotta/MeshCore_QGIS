@@ -4,13 +4,21 @@ qgisMinimumVersion=3.34
 description=Terrain line-of-sight viewshed analysis for MeshCore repeater networks. Fetches live node data, downloads DEM, runs per-node viewshed analysis, and loads results as QGIS layers.
 version=0.1.0
 author=AlanMazzotta
-email=
+email=alanmazzotta@pcc.edu
 about=Pulls repeater positions from the public MeshCore map API, downloads a Copernicus 30m DEM via OpenTopography, runs GDAL viewshed analysis for every node, stacks them into a cumulative coverage raster, generates a directional coverage raster (8 compass sectors), and enriches the node layer with coverage area, peer connectivity, and dominant direction attributes.
+
+    External dependencies (install once via OSGeo4W Shell on Windows, or a terminal on Linux/macOS):
+    pip install msgpack geojson requests
+
+    An OpenTopography API key is required for DEM download (free account at https://opentopography.org).
+    The Signal Quality heatmap feature additionally requires a MeshCore Observer node logging packets to disk.
 tracker=https://github.com/AlanMazzotta/MeshCore_QGIS/issues
 repository=https://github.com/AlanMazzotta/MeshCore_QGIS
 tags=mesh,radio,coverage,viewshed,terrain,RF,MeshCore
-homepage=https://github.com/AlanMazzotta/MeshCore_QGIS
+homepage=https://github.com/AlanMazzotta/MeshCore_QGIS#readme
+license=GPL-2.0+
 category=Analysis
 icon=icon.png
 experimental=True
 deprecated=False
+changelog=0.1.0 - Initial release. 5-step geometric pipeline: fetch live MeshCore node data, download Copernicus GLO-30 DEM, compute per-node viewsheds, generate directional raster, enrich nodes with coverage area, peer count, dominant azimuth, and FSPL. Signal quality IDW heatmap from Observer packet logs.
