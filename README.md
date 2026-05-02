@@ -278,4 +278,4 @@ This makes the link performance audit a natural follow-on to live MQTT ingest ra
 
 ---
 
-*MIT License; see [LICENSE](LICENSE)*
+*GPL-2.0+ License; see [LICENSE](LICENSE)*
