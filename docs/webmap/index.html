@@ -486,8 +486,9 @@ function zoomObserver() {
 // ---------------------------------------------------------------------------
 // Basemap
 // ---------------------------------------------------------------------------
-L.tileLayer('https://basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png', {
-  attribution: '&copy; <a href="https://carto.com/">CARTO</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}', {
+  attribution: 'Tiles &copy; Esri &mdash; Esri, DeLorme, NAVTEQ',
+  maxNativeZoom: 16,
   maxZoom: 19,
 }).addTo(map);
 
@@ -514,13 +515,13 @@ const demHighlightLayer = L.geoJSON(null, {
 });
 fetch('DEM_extent_highlight.geojson')
   .then(r => r.json())
-  .then(data => { demHighlightLayer.addData(data); demHighlightLayer.addTo(map); });
+  .then(data => demHighlightLayer.addData(data));  // off by default; toggle in layer control
 
 const demGrayLayer = L.imageOverlay('dem_gray.png', baseBounds, {
   opacity: 0.08,
   interactive: false,
   pane: 'demPane',
-}).addTo(map);
+});  // off by default; toggle in layer control
 
 const hillshadeLayer = L.imageOverlay('hillshade.png', baseBounds, {
   opacity: 0.3,
@@ -641,7 +642,8 @@ fetch('nodes.geojson')
     ).addTo(map);
 
     // Label layer always on top — not in layer control
-    L.tileLayer('https://basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}.png', {
+    L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}', {
+      maxNativeZoom: 16,
       maxZoom: 19,
       pane: 'shadowPane',   // renders above overlays, below markers
     }).addTo(map);

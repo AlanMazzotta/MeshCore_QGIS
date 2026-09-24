@@ -13,9 +13,9 @@ class MeshCoreViewshedDock(QDockWidget):
     _SETTINGS_KEY    = "meshcore_viewshed/opentopo_api_key"
     _BASEMAP_KEY     = "meshcore_viewshed/add_basemap"
     _PACKETS_PATH_KEY = "meshcore_viewshed/packets_path"
-    _BASEMAP_URL  = ("type=xyz&url=https://basemaps.cartocdn.com/"
-                     "dark_all/{z}/{x}/{y}.png&zmax=19&zmin=0")
-    _BASEMAP_NAME = "Basemap (CartoDB Dark)"
+    _BASEMAP_URL  = ("type=xyz&url=https://server.arcgisonline.com/ArcGIS/rest/services/"
+                     "Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}&zmax=16&zmin=0")
+    _BASEMAP_NAME = "Basemap (Esri Dark Gray)"
 
     def __init__(self, iface, parent=None):
         super().__init__("MeshCore Viewshed", parent)
